@@ -1,0 +1,69 @@
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+config/local/
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
+
+# Python environments and caches
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node and frontend dependencies
+node_modules/
+
+# Build and packaging output
+build/
+dist/
+out/
+*.egg-info/
+*.spec
+
+# Runtime state: each computer owns its own copy
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+logs/
+*.jsonl
+martin_ai/gui_settings.json
+phone_remote_devices.json
+remote_pair_result.json
+remote_agent_status.json
+
+# Temporary and editor files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+.idea/
+.vscode/
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
