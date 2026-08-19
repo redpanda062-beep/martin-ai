@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.envrc
 config/local/
 *.pem
 *.key
@@ -9,6 +10,10 @@ config/local/
 *.pfx
 credentials*.json
 secrets*.json
+*credentials*.json
+*secret*.json
+*token*.json
+*pairing*.json
 
 # Python environments and caches
 .venv/
@@ -66,4 +71,7 @@ temp/
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
-
+*.lnk
+*.dmp
+*.etl
+*.evtx
