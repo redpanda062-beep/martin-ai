@@ -1,5 +1,10 @@
 # Martin AI Local
 
+The same repository is designed to run on Windows and macOS. Shared core, UI,
+skills, memory, and Ollama integration live under `martin_ai/`; native services
+are selected at runtime from `martin_ai/platform/windows` or
+`martin_ai/platform/macos`. See `docs/CROSS_PLATFORM.md`.
+
 This version uses Ollama and `qwen3:8b` on your PC. It does not require an OpenAI API key.
 
 ## Before starting

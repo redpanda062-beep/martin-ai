@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..platform import system
+
 ALLOWED_TEXT_EXTENSIONS = {
     ".txt", ".log", ".ini", ".cfg", ".json", ".xml",
     ".yaml", ".yml", ".md", ".csv",
@@ -115,5 +117,8 @@ def open_user_folder(folder_name: str) -> dict[str, Any]:
     if not folder.exists():
         return {"success": False, "error": f"The folder does not exist: {folder}"}
 
-    os.startfile(folder)
+    try:
+        system().open_path(folder)
+    except OSError as exc:
+        return {"success": False, "error": str(exc)}
     return {"success": True, "message": f"Opening {normalized}.", "path": str(folder)}

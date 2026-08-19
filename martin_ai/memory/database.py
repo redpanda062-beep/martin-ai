@@ -6,10 +6,10 @@ import logging
 from pathlib import Path
 from typing import Iterable
 
-from ..config import APP_DIR
+from ..paths import DATABASE_PATH
 
 
-DEFAULT_DATABASE_PATH = APP_DIR / "martin_ai.db"
+DEFAULT_DATABASE_PATH = DATABASE_PATH
 LOGGER = logging.getLogger("martin_ai.memory")
 
 

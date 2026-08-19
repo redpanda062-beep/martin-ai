@@ -1,50 +1,53 @@
 from __future__ import annotations
 
-from .apps import app_status, available_apps, close_app, list_running_apps, open_app
 from .desktop import read_clipboard, take_screenshot, write_clipboard
-from .devices import (audio_device_status, bluetooth_status, controller_status,
-                      display_status, network_adapter_status, usb_status)
-from .diagnostics import (
-    cpu_status,
-    game_status,
-    network_status,
-    run_network_diagnostic,
-    check_gateway,
-    check_dns,
-    check_internet_connectivity,
-    measure_network_latency,
-    measure_gateway_latency,
-    measure_external_latency,
-    measure_network_jitter,
-    get_wifi_signal,
-    get_network_utilization,
-    get_network_process_usage,
-    investigate_network_performance,
-    nvidia_status,
-    ram_status,
-    recent_windows_errors,
-    save_diagnostic_report,
-    system_summary,
-    storage_status,
-    top_processes,
-)
 from .files import open_user_folder, read_text_file, search_files
-from .repairs import (
-    clear_shader_caches,
-    flush_dns,
-    reset_microsoft_store_cache,
-    run_dism_restorehealth,
-    run_sfc_scan,
-    restore_shader_caches,
-)
-from .security import (
-    create_incident_report, defender_custom_scan, defender_full_scan,
-    defender_quick_scan, network_connections, security_events,
-    security_health_report, startup_entries, suspicious_processes,
-    terminate_suspicious_process, update_defender_intelligence,
-    watched_folders, windows_security_status,
-)
-from ..crash_detective import analyze_crash, explain_crash, get_crash_history, get_last_crash
+from ..platform import is_windows
+
+if is_windows():
+    from .apps import app_status, available_apps, close_app, list_running_apps, open_app
+    from .devices import (audio_device_status, bluetooth_status, controller_status,
+                          display_status, network_adapter_status, usb_status)
+    from .diagnostics import (
+        cpu_status, game_status, network_status, run_network_diagnostic,
+        check_gateway, check_dns, check_internet_connectivity,
+        measure_network_latency, measure_gateway_latency, measure_external_latency,
+        measure_network_jitter, get_wifi_signal, get_network_utilization,
+        get_network_process_usage, investigate_network_performance, nvidia_status,
+        ram_status, recent_windows_errors, save_diagnostic_report, system_summary,
+        storage_status, top_processes,
+    )
+    from .repairs import (
+        clear_shader_caches, flush_dns, reset_microsoft_store_cache,
+        run_dism_restorehealth, run_sfc_scan, restore_shader_caches,
+    )
+    from .security import (
+        create_incident_report, defender_custom_scan, defender_full_scan,
+        defender_quick_scan, network_connections, security_events,
+        security_health_report, startup_entries, suspicious_processes,
+        terminate_suspicious_process, update_defender_intelligence,
+        watched_folders, windows_security_status,
+    )
+    from ..crash_detective import analyze_crash, explain_crash, get_crash_history, get_last_crash
+else:
+    from ..platform.macos.tools import (
+        analyze_crash, app_status, audio_device_status, available_apps,
+        bluetooth_status, check_dns, check_gateway, check_internet_connectivity,
+        clear_shader_caches, close_app, controller_status, cpu_status,
+        create_incident_report, defender_custom_scan, defender_full_scan,
+        defender_quick_scan, display_status, explain_crash, flush_dns, game_status,
+        get_crash_history, get_last_crash, get_network_process_usage,
+        get_network_utilization, get_wifi_signal, investigate_network_performance,
+        list_running_apps, measure_external_latency, measure_gateway_latency,
+        measure_network_jitter, measure_network_latency, network_adapter_status,
+        network_connections, network_status, nvidia_status, open_app, ram_status,
+        recent_windows_errors, reset_microsoft_store_cache, restore_shader_caches,
+        run_dism_restorehealth, run_network_diagnostic, run_sfc_scan,
+        save_diagnostic_report, security_events, security_health_report,
+        startup_entries, storage_status, suspicious_processes, system_summary,
+        terminate_suspicious_process, top_processes, update_defender_intelligence,
+        usb_status, watched_folders, windows_security_status,
+    )
 
 READ_ONLY_TOOLS = {
     "cpu_status": cpu_status,

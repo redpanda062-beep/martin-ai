@@ -5,9 +5,10 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .paths import DATA_DIR, LOCAL_CONFIG_PATH
 
-APP_DIR = Path.home() / "Documents" / "MartinAI"
-CONFIG_PATH = APP_DIR / "settings.json"
+APP_DIR = DATA_DIR
+CONFIG_PATH = LOCAL_CONFIG_PATH
 DEFAULT_SETTINGS: dict[str, Any] = {
     "schema_version": 1,
     "simulation_mode": True,
