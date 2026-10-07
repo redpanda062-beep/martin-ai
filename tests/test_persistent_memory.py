@@ -61,6 +61,21 @@ class PersistentMemoryTests(unittest.TestCase):
         self.assertIn("don't have any matching", result.message)
         restarted.db.close()
 
+    def test_answer_preference_questions_route_to_saved_memory(self) -> None:
+        handle_memory_command("Remember that I prefer short answers.", self.memory)
+        for wording in (
+            "How do I like your answers?",
+            "How do I like my responses?",
+            "How do I like you to answer?",
+        ):
+            with self.subTest(wording=wording), patch("martin_ai.router.READ_ONLY_TOOLS") as tools:
+                result = route_command(wording, ActionManager({}), self.memory)
+                self.assertTrue(result.handled)
+                self.assertEqual(result.intent, "memory")
+                self.assertIn("prefers short answers", result.message)
+                tools.__getitem__.assert_not_called()
+        self.assertEqual(len(self.memory.list_memories()), 1)
+
     def test_broad_memory_question_lists_saved_memories(self) -> None:
         handle_memory_command("Remember that my favorite game is Skyrim.", self.memory)
         result = handle_memory_command("What do you remember about me?", self.memory)

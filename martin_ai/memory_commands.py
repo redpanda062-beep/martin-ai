@@ -32,11 +32,19 @@ def _category_and_key(content: str) -> tuple[str, str | None]:
     return "user_fact", None
 
 
+def _is_memory_recall(lower: str) -> bool:
+    return bool(
+        "what do you remember" in lower or "what did i tell you" in lower
+        or re.match(r"^how do i like (?:you to (?:respond|reply|answer)|(?:your|my) (?:answers?|responses?|replies))\b", lower)
+        or re.match(r"^do i prefer .+ answers?", lower)
+        or re.match(r"^what are my (?:response|answer) preferences?", lower)
+    )
+
+
 def is_memory_command(text: str, memory: MemoryManager) -> bool:
     lower = re.sub(r"\s+", " ", text.strip().lower())
     detected = bool(memory.pending_clear or re.match(r"^(remember|forget|clear my memor)", lower)
-                or "what do you remember" in lower or "what did i tell you" in lower
-                or re.match(r"^(how do i like you to (?:respond|reply)|do i prefer .+ answers?|what are my (?:response|answer) preferences?)", lower))
+                or _is_memory_recall(lower))
     if detected:
         LOGGER.info("[MEMORY] intent detected: %s", "pending_clear" if memory.pending_clear else lower.split()[0])
     return detected
@@ -78,10 +86,7 @@ def handle_memory_command(text: str, memory: MemoryManager) -> MemoryCommandResu
         count = memory.forget_matching(subject)
         message = f"I removed {count} matching memor{'y' if count == 1 else 'ies'}." if count else "I couldn't find a matching saved memory."
         return MemoryCommandResult(True, f"**Memory Updated**\n\n{message}", bool(count))
-    if ("what do you remember" in lower or "what did i tell you" in lower
-            or "how do i like you to respond" in lower or "how do i like you to reply" in lower
-            or re.match(r"^do i prefer .+ answers?", lower)
-            or re.match(r"^what are my (?:response|answer) preferences?", lower)):
+    if _is_memory_recall(lower):
         category = "pc_information" if "pc" in lower or "computer" in lower else None
         search = ""
         about = re.search(r"(?:about|tell you about)\s+(.+?)[?.]*$", lower)
