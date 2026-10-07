@@ -171,10 +171,13 @@ class GuiTests(unittest.TestCase):
         window.apply_security_status({"status": "Needs attention", "defender": {"real_time_protection_enabled": True},
                                       "firewall": {"Domain": True, "Private": True, "Public": True},
                                       "findings": [{"label": "uncertain", "evidence": ["Unsigned"]}]})
-        self.assertIn("Needs attention", window.security_overall.text())
-        self.assertIn("uncertain", window.security_output.toPlainText())
-        window.security_action_finished({"success": True})
+        self.assertIn("CHECKING", window.security_overall.text())
+        self.assertNotIn("{", window.security_output.toPlainText())
+        window.show_security_processes(); self.assertIn("Potentially Suspicious", window.security_output.toPlainText())
+        window.security_action_finished({"action": "defender_quick_scan", "result": {"success": True, "simulated": True, "executed": False}})
         self.assertEqual(window.security_scan_progress.value(), 100)
+        self.assertIn("TEST MODE", window.security_output.toPlainText())
+        self.assertNotIn('"simulated"', window.security_output.toPlainText())
         window.settings["minimize_to_tray"] = False
         window.close()
 

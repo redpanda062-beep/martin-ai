@@ -105,7 +105,8 @@ class ToolRegistry:
             simulation=simulated, incident_id=incident_id,
         ) if self.memory else None
         if simulated:
-            result = {"success": True, "simulated": True, "executed": False,
+            result = {"success": False, "request_handled": True, "simulated": True, "executed": False,
+                      "started": False, "completed": False,
                       "message": f"Simulation: would run {tool.name}.",
                       "expected_result": request.expected_result}
             if self.memory and action_id:

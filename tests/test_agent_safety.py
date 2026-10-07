@@ -61,7 +61,8 @@ class AgentSafetyTests(unittest.TestCase):
         registry.register(RegisteredTool("safe", "safe", "low", 2,
                                          lambda: calls.append(1) or {"success": True}, changes_system=True))
         result = registry.execute(ActionRequest("safe", expected_result="done"))
-        self.assertTrue(result["simulated"]); self.assertEqual(calls, [])
+        self.assertTrue(result["simulated"]); self.assertFalse(result["success"])
+        self.assertFalse(result["executed"]); self.assertEqual(calls, [])
 
     def test_emergency_stop_blocks_action(self) -> None:
         runtime = RuntimeControl(simulation_mode=False); runtime.stop()

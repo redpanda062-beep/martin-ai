@@ -11,7 +11,9 @@ APP_DIR = DATA_DIR
 CONFIG_PATH = LOCAL_CONFIG_PATH
 DEFAULT_SETTINGS: dict[str, Any] = {
     "schema_version": 1,
-    "simulation_mode": True,
+    # Normal desktop use executes explicitly approved protected actions. Tests and
+    # development can opt into zero-change simulation through this setting.
+    "simulation_mode": False,
     "autonomy_enabled": True,
     "self_repair": {"enabled": True, "auto_level_1": False},
     "game_mode": {

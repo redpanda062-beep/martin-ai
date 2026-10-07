@@ -38,6 +38,8 @@ from .tools import READ_ONLY_TOOLS, REPAIR_TOOLS, tool_policies
 from .tools.diagnostics import REPORT_DIR as DIAGNOSTIC_REPORT_DIR
 from .tools.diagnostics import measure_network_jitter
 from .tools.security import REPORT_DIR as SECURITY_REPORT_DIR, create_incident_report, security_health_report
+from .security_presenter import (activity_text, now_label, overall_protection, security_summary,
+                                 technical_json, translate_action_result)
 from .bootstrap import memory_manager, permission_manager, runtime_control, self_repair_engine, skill_manager, crash_detective, execute_registered
 from .config import load_settings as load_agent_settings, save_settings as save_agent_settings
 from .response_formatter import format_response, technical_details, wants_technical_details
@@ -623,68 +625,93 @@ class MartinMainWindow(QMainWindow):
         self.notification_list.addItem("No notifications yet.")
 
     def _security_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        self.security_overall = QLabel("Overall protection status: Not checked")
-        self.security_overall.setStyleSheet("font-size:22px;font-weight:700;color:#ff4040")
+        page = QWidget(); layout = QVBoxLayout(page)
+        self.security_overall = QLabel("○ OVERALL PROTECTION — NOT CHECKED")
+        self.security_overall.setStyleSheet("font-size:22px;font-weight:700;color:#e9e9e9")
         layout.addWidget(self.security_overall)
-        first = QHBoxLayout()
-        actions = (
-            ("Refresh", self.refresh_security), ("Quick scan", lambda: self.queue_security_action("defender_quick_scan")),
-            ("Full scan", lambda: self.queue_security_action("defender_full_scan")),
-            ("Scan file or folder", self.select_security_scan_target),
-            ("Update Defender definitions", lambda: self.queue_security_action("update_defender_intelligence")),
-        )
-        for text, callback in actions:
-            button = QPushButton(text, objectName="primary" if text == "Quick scan" else "")
-            button.clicked.connect(callback); first.addWidget(button)
-        layout.addLayout(first)
-        second = QHBoxLayout()
-        for text, callback in (("View suspicious processes", self.show_security_processes),
-                               ("View network connections", self.show_security_network),
-                               ("Open Windows Security", self.open_windows_security),
-                               ("Export security report", self.export_security_report)):
-            button = QPushButton(text); button.clicked.connect(callback); second.addWidget(button)
-        second.addStretch(); layout.addLayout(second)
-        self.security_summary = QLabel("Defender: -- | Firewall: -- | Last scan: -- | Current threats: -- | Security updates: --")
-        self.security_summary.setWordWrap(True); layout.addWidget(self.security_summary)
+
+        cards = QGridLayout(); self.security_cards: dict[str, QLabel] = {}
+        for index, (key, title) in enumerate((("defender", "Windows Defender"), ("firewall", "Windows Firewall"),
+                                              ("threats", "Virus & Threat Protection"), ("definitions", "Security Definitions"),
+                                              ("last_scan", "Last Scan"), ("current_threats", "Current Threats"),
+                                              ("processes", "Suspicious Processes"), ("network", "Network Security"))):
+            card = QLabel(f"{title}\n○ Not checked"); card.setObjectName("metricCard")
+            card.setWordWrap(True); card.setMinimumHeight(66); card.setMargin(10)
+            cards.addWidget(card, index // 4, index % 4); self.security_cards[key] = card
+        layout.addLayout(cards)
+
+        buttons = QGridLayout()
+        groups = (("SCAN", (("Quick Scan", lambda: self.queue_security_action("defender_quick_scan")),
+                             ("Full Scan", lambda: self.queue_security_action("defender_full_scan")),
+                             ("Scan File or Folder", self.select_security_scan_target))),
+                  ("PROTECTION", (("Refresh Security Status", self.refresh_security),
+                                   ("Update Defender Definitions", lambda: self.queue_security_action("update_defender_intelligence")),
+                                   ("Open Windows Security", self.open_windows_security))),
+                  ("INVESTIGATE", (("Suspicious Processes", self.show_security_processes),
+                                    ("Network Connections", self.show_security_network))),
+                  ("REPORTS", (("Security Report", self.export_security_report),
+                                ("Technical Details", self.toggle_security_details))))
+        for column, (group, actions) in enumerate(groups):
+            box = QVBoxLayout(); heading = QLabel(group); heading.setStyleSheet("color:#ff4040;font-weight:700")
+            box.addWidget(heading)
+            for text, callback in actions:
+                button = QPushButton(text, objectName="primary" if text == "Quick Scan" else "")
+                button.clicked.connect(callback); box.addWidget(button)
+            box.addStretch(); buttons.addLayout(box, 0, column)
+        layout.addLayout(buttons)
+
+        self.security_summary = QLabel("Martin AI Security Summary\nMartin AI is waiting to check Windows security.")
+        self.security_summary.setObjectName("metricCard"); self.security_summary.setWordWrap(True); self.security_summary.setMargin(10)
+        layout.addWidget(self.security_summary)
         self.remote_security_status = QLabel("Phone Remote: OFF"); layout.addWidget(self.remote_security_status)
         self.security_scan_progress = QProgressBar(); self.security_scan_progress.setRange(0, 100)
         self.security_scan_progress.setValue(0); self.security_scan_progress.setFormat("No security action running")
         layout.addWidget(self.security_scan_progress)
         self.security_output = QPlainTextEdit(); self.security_output.setReadOnly(True)
-        self.security_output.setPlaceholderText("Suspicious processes, connections, events, watched folders, and incident state appear here.")
+        self.security_output.setPlaceholderText("Recent Security Activity will appear here.")
         layout.addWidget(self.security_output, 1)
-        self.security_snapshot: dict[str, Any] = {}
+        self.security_details = QPlainTextEdit(); self.security_details.setReadOnly(True); self.security_details.setVisible(False)
+        layout.addWidget(self.security_details, 1)
+        self.security_snapshot: dict[str, Any] = {}; self.security_last_raw: Any = {}
+        self.security_activity: list[dict[str, Any]] = []
         return page
 
     @Slot()
     def refresh_security(self) -> None:
-        self.security_overall.setText("Overall protection status: Checking...")
+        self.security_overall.setText("● OVERALL PROTECTION — CHECKING...")
+        self.security_scan_progress.setRange(0, 0); self.security_scan_progress.setFormat("Checking security...")
         self.run_background(security_health_report, self.apply_security_status, self.show_error)
 
     @Slot(object)
     def apply_security_status(self, snapshot: object) -> None:
         data = snapshot if isinstance(snapshot, dict) else {"status": "Unavailable"}
-        self.security_snapshot = data
+        self.security_snapshot = data; self.security_last_raw = data
         defender = data.get("defender", {}) or {}; firewall = data.get("firewall", {}) or {}
-        threats = data.get("recent_detections", []) or []
-        self.security_overall.setText(f"Overall protection status: {data.get('status', 'Unavailable')}")
-        self.security_summary.setText(
-            f"Defender real-time: {defender.get('real_time_protection_enabled', 'Unavailable')} | "
-            f"Firewall D/P/P: {firewall.get('Domain', 'Unavailable')}/{firewall.get('Private', 'Unavailable')}/{firewall.get('Public', 'Unavailable')} | "
-            f"Last scan: {defender.get('last_quick_scan') or defender.get('last_full_scan') or 'Unavailable'} | "
-            f"Current threats: {len(threats)} | Security updates: {data.get('pending_security_updates', 'Unavailable')}"
-        )
+        threats = data.get("current_threats", data.get("recent_detections")); findings = data.get("findings", []) or []
+        status, explanation = overall_protection(data); icon = {"PROTECTED": "✓", "ATTENTION NEEDED": "⚠", "AT RISK": "✕"}.get(status, "○")
+        color = {"PROTECTED": "#66d17a", "ATTENTION NEEDED": "#ffbf47", "AT RISK": "#ff4040"}.get(status, "#e9e9e9")
+        self.security_overall.setText(f"{icon} OVERALL PROTECTION — {status}"); self.security_overall.setStyleSheet(f"font-size:22px;font-weight:700;color:{color}")
+        defender_ok = defender.get("antivirus_enabled") is True and defender.get("real_time_protection_enabled") is True
+        firewall_values = [firewall.get(name) for name in ("Domain", "Private", "Public")]
+        firewall_ok = all(value is True for value in firewall_values)
+        self.security_cards["defender"].setText("Windows Defender\n" + ("✓ Active and protecting your PC." if defender_ok else "⚠ Protection is unavailable or needs attention."))
+        self.security_cards["firewall"].setText("Windows Firewall\n" + ("✓ On — network connections are being protected." if firewall_ok else "⚠ One or more firewall profiles need attention."))
+        self.security_cards["threats"].setText("Virus & Threat Protection\n" + ("✓ No active threats detected." if threats == [] else "✕ Threats need review." if threats else "○ Not checked"))
+        definition_text = ("⚠ Protection definitions may be out of date." if data.get("definitions_outdated") else
+                           "✓ Protection definitions are up to date." if defender.get("signature_age_days") is not None else
+                           "○ Update status unavailable.")
+        self.security_cards["definitions"].setText("Security Definitions\n" + definition_text)
+        last_scan = defender.get("last_quick_scan") or defender.get("last_full_scan")
+        self.security_cards["last_scan"].setText("Last Scan\n" + (f"✓ {last_scan}" if last_scan else "○ No scan time available."))
+        self.security_cards["current_threats"].setText("Current Threats\n" + (f"{'✓' if not threats else '✕'} {len(threats)} detected" if isinstance(threats, list) else "○ Not checked"))
+        self.security_cards["processes"].setText("Suspicious Processes\n" + (f"⚠ {len(findings)} need review" if findings else "✓ No suspicious processes detected."))
+        connections = data.get("network_connections", []) or []
+        self.security_cards["network"].setText(f"Network Security\n✓ {len(connections)} active connections inventoried.")
+        self.security_summary.setText(f"Martin AI Security Summary\n{security_summary(data)}\n{explanation}")
         remote = self.phone_remote.get_status()
         self.remote_security_status.setText(f"Phone Remote: {remote['security']} | {remote['address'] or 'Not listening'}")
-        view = {"suspicious_processes": data.get("findings", []),
-                "active_network_connections": data.get("network_connections", []),
-                "recent_security_events": data.get("events", []), "watched_folders": data.get("watched_folders", []),
-                "startup_entries": data.get("startup", {}), "permission_errors": data.get("permission_errors", {}),
-                "current_incident_state": "Review required" if data.get("findings") else "No active incident",
-                "notice": data.get("disclaimer")}
-        self.security_output.setPlainText(json.dumps(view, indent=2, default=str))
+        self.security_scan_progress.setRange(0, 100); self.security_scan_progress.setValue(100); self.security_scan_progress.setFormat("Security check complete")
+        self._add_security_activity(icon, "Security status checked", status.title(), now_label())
         for finding in data.get("findings", []) or []:
             evidence = "; ".join(finding.get("evidence", [])) or "Review the available process evidence."
             self.add_notification("Suspicious process", evidence, "High" if finding.get("label") == "suspicious" else "Medium",
@@ -702,23 +729,27 @@ class MartinMainWindow(QMainWindow):
         if not pending: return
         dialog = ApprovalDialog(pending, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
-            self.security_output.setPlainText(json.dumps(action_manager.deny(), indent=2, default=str)); return
-        self.security_scan_progress.setRange(0, 0); self.security_scan_progress.setFormat(f"Running {name}...")
+            action_manager.deny(); self._add_security_activity("○", "Security action cancelled", "The requested action was not run.", now_label()); return
+        title = {"defender_quick_scan": "Quick Scan", "defender_full_scan": "Full Scan", "defender_custom_scan": "File or Folder Scan"}.get(name, "Security Update")
+        self.security_scan_progress.setRange(0, 0); self.security_scan_progress.setFormat(f"{title} — Scanning your PC..." if "scan" in name else f"{title} in progress...")
         self.run_background(action_manager.approve, self.security_action_finished, self.security_action_failed)
 
     @Slot(object)
     def security_action_finished(self, result: object) -> None:
+        self.security_last_raw = result
+        view = translate_action_result(result)
         self.security_scan_progress.setRange(0, 100); self.security_scan_progress.setValue(100)
-        self.security_scan_progress.setFormat("Security action finished")
-        self.security_output.setPlainText(json.dumps(result, indent=2, default=str))
-        success = isinstance(result, dict) and bool(result.get("success"))
-        self.add_notification("Security action finished", "The approved security action completed." if success else "The approved security action did not complete successfully.", "Informational" if success else "Medium")
+        self.security_scan_progress.setFormat(view["title"])
+        icon = {"safe": "✓", "warning": "⚠", "error": "✕", "test": "⚠"}.get(view["status"], "○")
+        self._add_security_activity(icon, view["title"], view["message"], now_label())
+        self.add_notification(view["title"], view["message"].replace("\n", " "), "Informational" if view["success"] else "Medium")
+        if view["executed"]: self.refresh_security()
 
     @Slot(str)
     def security_action_failed(self, error: str) -> None:
         self.security_scan_progress.setRange(0, 100); self.security_scan_progress.setValue(0)
         self.security_scan_progress.setFormat("Security action failed")
-        self.show_error(error)
+        self.security_last_raw = {"error": error}; self._add_security_activity("✕", "Security action couldn't start", "Martin AI couldn't complete the request. Open Technical Details for diagnostic information.", now_label())
 
     def select_security_scan_target(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Select a file for Microsoft Defender scan")
@@ -727,13 +758,37 @@ class MartinMainWindow(QMainWindow):
         if path: self.queue_security_action("defender_custom_scan", {"path": path})
 
     def show_security_processes(self) -> None:
-        self.security_output.setPlainText(json.dumps(self.security_snapshot.get("processes", []), indent=2, default=str))
+        findings = self.security_snapshot.get("findings", []) or []
+        if not findings: text = "Suspicious Processes\n\n✓ No suspicious processes detected."
+        else:
+            rows = ["Potentially Suspicious", "Heuristic findings are not proof of malware. Review before taking action."]
+            for item in findings:
+                risk = "High" if item.get("label") == "suspicious" else "Medium"
+                rows.append(f"\nProcess: {item.get('name') or 'Unknown application'}\nReason: {'; '.join(item.get('evidence', []))}\nRisk: {risk}\nPID: {item.get('pid', 'Unavailable')}\nActions: Investigate | Scan File | Open File Location | View Technical Details")
+            text = "\n".join(rows)
+        self.security_output.setPlainText(text)
 
     def show_security_network(self) -> None:
-        self.security_output.setPlainText(json.dumps(self.security_snapshot.get("network_connections", []), indent=2, default=str))
+        connections = self.security_snapshot.get("network_connections", []) or []
+        rows = ["Network Activity", "", f"{len(connections)} active connections", f"Normal: {len(connections)}", "Needs Review: 0", "", "No connection is labelled malicious without reliable evidence."]
+        for item in connections[:20]:
+            rows.append(f"\nApplication: {item.get('process_name') or 'Unknown'}\nRemote address: {item.get('remote_address') or 'Local/listening'}:{item.get('remote_port') or ''}\nConnection type: {item.get('protocol', 'Unknown')} — {item.get('state', 'Unknown')}\nReason flagged: Not flagged; shown for local review.")
+        self.security_output.setPlainText("\n".join(rows))
+
+    def _add_security_activity(self, icon: str, title: str, message: str, when: str) -> None:
+        self.security_activity.append({"icon": icon, "title": title, "message": message, "when": when})
+        self.security_activity = self.security_activity[-20:]
+        self.security_output.setPlainText("Recent Security Activity\n\n" + activity_text(self.security_activity))
+
+    def toggle_security_details(self) -> None:
+        visible = not self.security_details.isVisible()
+        self.security_details.setPlainText(technical_json(self.security_last_raw or self.security_snapshot))
+        self.security_details.setVisible(visible)
 
     def open_windows_security(self) -> None:
-        try: os.startfile("windowsdefender:")
+        try:
+            os.startfile("windowsdefender:")
+            self._add_security_activity("✓", "Windows Security opened", "Review protection and safe actions in the Windows Security app.", now_label())
         except OSError as exc: self.show_error(f"Windows Security could not be opened: {exc}")
 
     def _phone_remote_page(self) -> QWidget:
@@ -980,7 +1035,11 @@ class MartinMainWindow(QMainWindow):
 
     def export_security_report(self) -> None:
         result = create_incident_report(self.security_snapshot or {"status": "Not checked"})
-        self.security_output.setPlainText(json.dumps(result, indent=2, default=str))
+        self.security_last_raw = result
+        if result.get("success"):
+            self._add_security_activity("✓", "Security report exported", f"Saved to {result.get('path', 'the reports folder')}", now_label())
+        else:
+            self._add_security_activity("✕", "Security report couldn't be exported", "Open Technical Details for diagnostic information.", now_label())
         self.refresh_reports()
 
     def _settings_page(self) -> QWidget:

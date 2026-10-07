@@ -6,7 +6,7 @@ import threading
 class RuntimeControl:
     """Thread-safe kill switch and autonomy state shared by every action path."""
 
-    def __init__(self, *, simulation_mode: bool = True, autonomy_enabled: bool = True) -> None:
+    def __init__(self, *, simulation_mode: bool = False, autonomy_enabled: bool = True) -> None:
         self._lock = threading.RLock()
         self._simulation_mode = simulation_mode
         self._autonomy_enabled = autonomy_enabled

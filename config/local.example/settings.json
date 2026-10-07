@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "simulation_mode": true,
+  "simulation_mode": false,
   "permission_level": 1,
   "phone_remote": {
     "enabled": false

@@ -34,6 +34,14 @@ def _startup_file() -> Path:
     return roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "Martin Remote Agent.cmd"
 
 
+def _startup_command() -> str:
+    project = Path(__file__).resolve().parent.parent
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    executable = pythonw if pythonw.exists() else Path(sys.executable)
+    launcher = project / "start_remote_agent.pyw"
+    return f'"{executable}" "{launcher}" supervise'
+
+
 def _write_status(**values: Any) -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
     STATUS_FILE.write_text(json.dumps({"updated": time.time(), **values}, indent=2), encoding="utf-8")
@@ -111,15 +119,27 @@ def run_agent() -> int:
 
 
 def install_startup() -> dict[str, Any]:
-    target = _startup_file(); target.parent.mkdir(parents=True, exist_ok=True)
-    project = Path(__file__).resolve().parent.parent
-    target.write_text(f'@echo off\r\ncd /d "{project}"\r\nstart "Martin Remote" /min "{sys.executable}" -m martin_ai.remote_background supervise\r\n', encoding="utf-8")
-    return {"success": True, "message": "Martin Remote will start after user login.", "startup": str(target)}
+    if os.name != "nt": return {"success": False, "error": "Startup registration is only supported on Windows."}
+    import winreg
+    legacy = _startup_file()
+    try: legacy.unlink()
+    except FileNotFoundError: pass
+    key_path = RUN_KEY.removeprefix("HKCU\\")
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+        winreg.SetValueEx(key, RUN_NAME, 0, winreg.REG_SZ, _startup_command())
+    return {"success": True, "message": "Martin Remote will start hidden after user login.", "startup": f"{RUN_KEY}\\{RUN_NAME}"}
 
 
 def uninstall_startup() -> dict[str, Any]:
     try: _startup_file().unlink()
     except FileNotFoundError: pass
+    if os.name == "nt":
+        import winreg
+        key_path = RUN_KEY.removeprefix("HKCU\\")
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+                winreg.DeleteValue(key, RUN_NAME)
+        except FileNotFoundError: pass
     return {"success": True, "message": "Startup registration removed."}
 
 

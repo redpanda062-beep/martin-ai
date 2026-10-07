@@ -5,11 +5,13 @@ import json
 import os
 import re
 import subprocess
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from ..windows_process import hidden_process_kwargs
+from ..powershell import run_powershell
 
 
 REPORT_DIR = Path.home() / "Documents" / "MartinAI Security Reports"
@@ -21,16 +23,9 @@ _SAFE_ACTIONS = {"defender_quick_scan", "defender_full_scan", "defender_custom_s
 
 
 def _ps(script: str, timeout: int = 60) -> tuple[bool, str]:
-    """Run a fixed, local, read-only Windows query (never user-authored PowerShell)."""
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=timeout, **hidden_process_kwargs(),
-        )
-        output = (result.stdout or result.stderr).strip()
-        return result.returncode == 0, output
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, str(exc)
+    """Compatibility wrapper for fixed, application-owned PowerShell queries."""
+    result = run_powershell(script, timeout=timeout)
+    return bool(result["success"]), str(result["stdout"] or result["stderr"] or result["message"])
 
 
 def _json_ps(script: str, timeout: int = 60) -> tuple[Any, str | None]:
@@ -45,13 +40,28 @@ def _json_ps(script: str, timeout: int = 60) -> tuple[Any, str | None]:
 
 def parse_defender_status(data: dict[str, Any] | None) -> dict[str, Any]:
     data = data or {}
+    def timestamp(value: Any) -> Any:
+        match = re.fullmatch(r"/Date\((\d+)(?:[+-]\d+)?\)/", str(value or ""))
+        if not match: return value
+        return datetime.fromtimestamp(int(match.group(1)) / 1000, timezone.utc).astimezone().isoformat()
+    def age(value: Any) -> Any:
+        return None if value == 4294967295 else value
     return {
         "antivirus_enabled": data.get("AntivirusEnabled"),
         "real_time_protection_enabled": data.get("RealTimeProtectionEnabled"),
         "antispyware_enabled": data.get("AntispywareEnabled"),
-        "last_quick_scan": data.get("QuickScanEndTime"),
-        "last_full_scan": data.get("FullScanEndTime"),
-        "signature_updated": data.get("AntivirusSignatureLastUpdated"),
+        "behavior_monitor_enabled": data.get("BehaviorMonitorEnabled"),
+        "ioav_protection_enabled": data.get("IoavProtectionEnabled"),
+        "nis_enabled": data.get("NISEnabled"),
+        "signature_version": data.get("AntivirusSignatureVersion"),
+        "last_quick_scan": timestamp(data.get("QuickScanEndTime")),
+        "last_full_scan": timestamp(data.get("FullScanEndTime")),
+        "quick_scan_age_days": age(data.get("QuickScanAge")),
+        "full_scan_age_days": age(data.get("FullScanAge")),
+        "quick_scan_started": timestamp(data.get("QuickScanStartTime")),
+        "full_scan_started": timestamp(data.get("FullScanStartTime")),
+        "signature_updated": timestamp(data.get("AntivirusSignatureLastUpdated")),
+        "signature_age_days": data.get("AntivirusSignatureAge"),
     }
 
 
@@ -65,24 +75,80 @@ def parse_firewall_status(data: Any) -> dict[str, bool | None]:
     return result
 
 
+_SECURITY_SNAPSHOT_SCRIPT = r"""
+$ErrorActionPreference = 'Stop'
+$errors = [ordered]@{}
+$defender = $null; $firewall = $null; $currentThreats = $null; $detections = $null; $service = $null
+try { $defender = Get-MpComputerStatus | Select-Object AntivirusEnabled,AntispywareEnabled,RealTimeProtectionEnabled,BehaviorMonitorEnabled,IoavProtectionEnabled,NISEnabled,AntivirusSignatureVersion,AntivirusSignatureLastUpdated,AntivirusSignatureAge,QuickScanAge,FullScanAge,QuickScanStartTime,QuickScanEndTime,FullScanStartTime,FullScanEndTime }
+catch { $errors.defender = $_.Exception.Message }
+try { $firewall = @(Get-NetFirewallProfile | Select-Object Name,Enabled) }
+catch { $errors.firewall = $_.Exception.Message }
+try { $currentThreats = @(Get-MpThreat | Select-Object ThreatID,ThreatName,SeverityID,CategoryID,DidThreatExecute,IsActive) }
+catch { $errors.current_threats = $_.Exception.Message }
+try { $detections = @(Get-MpThreatDetection | Select-Object -First 20 ThreatID,ThreatStatusID,ActionSuccess,InitialDetectionTime,LastThreatStatusChangeTime,Resources) }
+catch { $errors.detections = $_.Exception.Message }
+try { $service = Get-Service -Name WinDefend | Select-Object Name,Status,StartType }
+catch { $errors.service = $_.Exception.Message }
+[pscustomobject]@{ defender=$defender; firewall=$firewall; current_threats=$currentThreats; recent_detections=$detections; service=$service; errors=$errors } | ConvertTo-Json -Depth 7 -Compress
+"""
+
+
+def _scan_running(defender: dict[str, Any]) -> bool | None:
+    if not defender: return None
+    for prefix in ("QuickScan", "FullScan"):
+        started, ended = defender.get(prefix + "StartTime"), defender.get(prefix + "EndTime")
+        if started and (not ended or str(started) > str(ended)): return True
+    return False
+
+
 def windows_security_status() -> dict[str, Any]:
-    defender, defender_error = _json_ps("Get-MpComputerStatus | Select AntivirusEnabled,RealTimeProtectionEnabled,AntispywareEnabled,QuickScanEndTime,FullScanEndTime,AntivirusSignatureLastUpdated")
-    firewall, firewall_error = _json_ps("Get-NetFirewallProfile | Select Name,Enabled")
-    threats, threats_error = _json_ps("@(Get-MpThreatDetection | Select -First 20 ThreatID,ThreatStatusID,InitialDetectionTime,Resources)")
-    secure_boot, secure_error = _json_ps("[pscustomobject]@{SecureBoot=(Confirm-SecureBootUEFI)}")
-    tpm, tpm_error = _json_ps("Get-Tpm | Select TpmPresent,TpmReady")
-    updates, update_error = _json_ps("@(Get-HotFix | Sort InstalledOn -Descending | Select -First 10 HotFixID,InstalledOn)")
-    errors = {k: v for k, v in {"defender": defender_error, "firewall": firewall_error,
-              "detections": threats_error, "secure_boot": secure_error, "tpm": tpm_error,
-              "updates": update_error}.items() if v}
-    parsed_defender = parse_defender_status(defender)
-    parsed_firewall = parse_firewall_status(firewall)
-    needs_attention = bool(errors) or parsed_defender["real_time_protection_enabled"] is not True or any(v is not True for v in parsed_firewall.values()) or bool(threats)
-    return {"success": True, "status": "Needs attention" if needs_attention else "Protected",
+    command = run_powershell(_SECURITY_SNAPSHOT_SCRIPT, timeout=90)
+    if not command["success"]:
+        error = command["stderr"] or command["message"]
+        return {"success": False, "status": "error", "overall_status": "error", "defender": {},
+                "firewall": {"Domain": None, "Private": None, "Public": None},
+                "threats": {"checked": False, "count": None, "items": []}, "current_threats": None,
+                "scans": {"running": None}, "permission_errors": {"powershell": error},
+                "powershell": command, "disclaimer": "Windows security status could not be retrieved."}
+    try:
+        snapshot = json.loads(command["stdout"])
+    except (TypeError, json.JSONDecodeError):
+        return {"success": False, "status": "error", "overall_status": "error", "defender": {},
+                "firewall": {"Domain": None, "Private": None, "Public": None},
+                "threats": {"checked": False, "count": None, "items": []}, "current_threats": None,
+                "scans": {"running": None}, "permission_errors": {"powershell": "Windows returned unreadable security data."},
+                "powershell": command}
+    raw_defender = snapshot.get("defender") if isinstance(snapshot.get("defender"), dict) else {}
+    current_threats = snapshot.get("current_threats")
+    if current_threats is not None and not isinstance(current_threats, list): current_threats = [current_threats]
+    recent = snapshot.get("recent_detections") or []
+    if not isinstance(recent, list): recent = [recent]
+    errors = snapshot.get("errors") if isinstance(snapshot.get("errors"), dict) else {}
+    parsed_defender = parse_defender_status(raw_defender)
+    service = snapshot.get("service") if isinstance(snapshot.get("service"), dict) else {}
+    service_state = service.get("Status")
+    service_start = service.get("StartType")
+    parsed_defender["service_state"] = {4: "Running", 1: "Stopped"}.get(service_state, service_state)
+    parsed_defender["service_start_type"] = {2: "Automatic", 3: "Manual", 4: "Disabled"}.get(service_start, service_start)
+    parsed_firewall = parse_firewall_status(snapshot.get("firewall"))
+    signature_age = parsed_defender.get("signature_age_days")
+    definitions_outdated = isinstance(signature_age, (int, float)) and signature_age > 1
+    required = [parsed_defender.get("antivirus_enabled"), parsed_defender.get("real_time_protection_enabled"),
+                parsed_firewall.get("Domain"), parsed_firewall.get("Private"), parsed_firewall.get("Public")]
+    complete = current_threats is not None and all(value is not None for value in required)
+    at_risk = any(value is False for value in required) or bool(current_threats)
+    overall = "at_risk" if complete and at_risk else "attention" if complete and (definitions_outdated or errors) else "protected" if complete else "unknown"
+    return {"success": complete, "status": overall, "overall_status": overall,
             "defender": parsed_defender, "firewall": parsed_firewall,
-            "recent_detections": threats or [], "secure_boot": secure_boot,
-            "tpm": tpm, "recent_updates": updates or [],
-            "pending_security_updates": "unavailable", "permission_errors": errors,
+            "threats": {"checked": current_threats is not None, "count": len(current_threats) if current_threats is not None else None,
+                        "items": current_threats or []},
+            "recent_detections": recent, "current_threats": current_threats,
+            "scans": {"running": _scan_running(raw_defender), "quick_scan_age": parsed_defender.get("quick_scan_age_days"),
+                      "full_scan_age": parsed_defender.get("full_scan_age_days"),
+                      "last_quick_scan": parsed_defender.get("last_quick_scan"), "last_full_scan": parsed_defender.get("last_full_scan")},
+            "pending_security_updates": None, "permission_errors": errors,
+            "definitions_outdated": definitions_outdated,
+            "powershell": command,
             "disclaimer": "This snapshot cannot prove that the PC is completely secure."}
 
 
@@ -199,23 +265,54 @@ def watched_folders() -> dict[str, Any]:
     return {"success": True, "folders": [str(p) for p in roots if str(p) and p.exists()], "monitoring": "optional_snapshot"}
 
 
-def _defender(command: str, timeout: int) -> dict[str, Any]:
-    ok, output = _ps(f"$ErrorActionPreference='Stop'; {command}; 'Completed'", timeout)
-    return {"success": ok, "output": output, "cancelled": isinstance(output, str) and "cancel" in output.lower()}
+def _defender(script: str, timeout: int, *, parameters: dict[str, str] | None = None) -> dict[str, Any]:
+    started = time.monotonic()
+    command = run_powershell("$ErrorActionPreference='Stop';" + script, timeout=timeout, parameters=parameters)
+    detail = str(command["stderr"] or command["stdout"] or command["message"])
+    lower = detail.lower()
+    requires_admin = any(marker in lower for marker in ("access is denied", "access denied", "administrator", "unauthorized"))
+    already_running = any(marker in lower for marker in ("scan is already", "another scan", "0x80508024"))
+    completed = bool(command["success"])
+    result = {"success": completed, "request_handled": True, "simulated": False,
+              "executed": completed, "started": completed, "completed": completed,
+              "requires_admin": requires_admin, "already_running": already_running,
+              "duration_seconds": round(time.monotonic() - started, 1), "powershell": command}
+    if not completed:
+        result["message"] = ("Administrator permission is required." if requires_admin else
+                             "A Microsoft Defender scan is already running." if already_running else
+                             "Microsoft Defender is unavailable." if command["unavailable"] else
+                             "The Windows security action failed.")
+        result["error"] = detail
+    return result
 
 
-def defender_quick_scan() -> dict[str, Any]: return _defender("Start-MpScan -ScanType QuickScan", 1800)
-def defender_full_scan() -> dict[str, Any]: return _defender("Start-MpScan -ScanType FullScan", 14400)
+def defender_quick_scan() -> dict[str, Any]:
+    return _defender("Start-MpScan -ScanType QuickScan", 1800)
+
+
+def defender_full_scan() -> dict[str, Any]:
+    return _defender("Start-MpScan -ScanType FullScan", 14400)
 
 
 def defender_custom_scan(path: str) -> dict[str, Any]:
-    target = Path(path).expanduser().resolve()
-    if not target.exists(): return {"success": False, "error": "Selected file or folder does not exist."}
-    escaped = str(target).replace("'", "''")
-    return _defender(f"Start-MpScan -ScanType CustomScan -ScanPath '{escaped}'", 7200)
+    try: target = Path(path).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError):
+        return {"success": False, "request_handled": True, "simulated": False, "executed": False,
+                "started": False, "completed": False, "message": "Selected file or folder does not exist."}
+    if not target.is_file() and not target.is_dir():
+        return {"success": False, "request_handled": True, "simulated": False, "executed": False,
+                "started": False, "completed": False, "message": "The selected path cannot be scanned."}
+    return _defender("$target=$env:MARTIN_AI_PS_SCAN_PATH; Start-MpScan -ScanType CustomScan -ScanPath $target",
+                     7200, parameters={"SCAN_PATH": str(target)})
 
 
-def update_defender_intelligence() -> dict[str, Any]: return _defender("Update-MpSignature", 1800)
+def update_defender_intelligence() -> dict[str, Any]:
+    result = _defender("Update-MpSignature", 1800)
+    if result["success"]:
+        refreshed = windows_security_status()
+        result["defender"] = refreshed.get("defender", {})
+        result["status_refresh_success"] = refreshed.get("success", False)
+    return result
 
 
 def terminate_suspicious_process(pid: int) -> dict[str, Any]:
