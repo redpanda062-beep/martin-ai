@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from .models import PlanStep
 from .policies import LIMITS, ToolPolicy
+from martin_ai.intent import is_storage_investigation
 
 
 ModelClient = Callable[[str], str]
@@ -16,6 +17,11 @@ class Planner:
         self.model_client = model_client
 
     def create_plan(self, request: str, context: dict[str, Any] | None = None) -> list[PlanStep]:
+        if is_storage_investigation(request) and "investigate_storage" in self.policies:
+            return self._validate([
+                {"tool_name": "storage_status", "goal": "Check drive capacity and free space"},
+                {"tool_name": "investigate_storage", "goal": "Measure selected folders and identify large files without deleting anything"},
+            ])
         # Direct status/action requests are handled by the fast intent router.
         # Requests reaching this planner are investigations, so let the local
         # model choose a small validated plan and retain deterministic fallback.

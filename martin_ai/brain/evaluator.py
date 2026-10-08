@@ -48,7 +48,7 @@ class Evaluator:
             tool, result = item.get("tool"), item.get("result", {})
             if not isinstance(result, dict) or result.get("success") is False:
                 continue
-            if tool == "system_summary":
+            if tool in {"system_summary", "storage_status"}:
                 ram = result.get("ram_percent_used")
                 if isinstance(ram, (int, float)):
                     found.append(f"RAM usage was {ram}% (high-pressure threshold: 90%).")
@@ -78,6 +78,20 @@ class Evaluator:
                         reading = f"{drive} has {free:g} GB free, above the low-space thresholds."
                         state.normal_readings.append(reading)
                         found.append(reading)
+            elif tool == "investigate_storage":
+                scope = str(result.get("scope", "Selected folders only."))
+                state.uncertainty.append(scope)
+                state.uncertainty.append(str(result.get("size_basis", "Measured file sizes only.")))
+                if result.get("partial"):
+                    state.uncertainty.append("The storage scan is partial: time/file limits or inaccessible entries prevented a complete count. Sizes are lower bounds for scanned locations.")
+                for location in result.get("locations", [])[:5]:
+                    size = location.get("bytes", 0) / 2**30
+                    finding = f"{location.get('name')}: {size:.2f} GB observed" + (" (partial count)." if not location.get("complete") else ".")
+                    state.confirmed_findings.append(finding)
+                    found.append(finding)
+                for file in result.get("largest_files", [])[:3]:
+                    state.confirmed_findings.append(f"Large file observed: {file.get('path')} ({file.get('bytes', 0) / 2**30:.2f} GB).")
+                recs.extend(str(line) for line in result.get("suggestions", []))
             elif tool == "game_status" and result.get("game"):
                 found.append(f"{result.get('game')} was detected with {result.get('elapsed_seconds', 0)} seconds elapsed.")
             elif tool == "nvidia_status":

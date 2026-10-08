@@ -203,6 +203,11 @@ def _investigation(state: Any) -> str:
     assessment = investigation_assessment(state)
     if assessment:
         action = f"\n\n**Next check:** {recommendations[0]}" if recommendations else ""
+        if any(item.get("tool") == "investigate_storage" for item in evidence):
+            uncertainty = getattr(state, "uncertainty", [])
+            limits = "\n\n**Scan Limits**\n\n" + "\n".join(f"- {line}" for line in uncertainty)
+            options = "\n\n**Cleanup Options — Review First**\n\n" + "\n".join(f"- {line}" for line in recommendations)
+            return f"**Storage Investigation Complete**\n\n{assessment}{limits}{options}"
         return f"**Investigation Complete**\n\n{diagnosis}\n\n{assessment}{action}"
     for item in evidence:
         if item.get("tool") == "system_summary" and isinstance(item.get("result"), dict):

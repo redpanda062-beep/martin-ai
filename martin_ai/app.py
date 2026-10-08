@@ -311,6 +311,7 @@ for _name, _description in {
     "cpu_status": "Read current CPU utilization and core counts.",
     "ram_status": "Read current RAM use and availability.",
     "storage_status": "Read disk capacity and free space.",
+    "investigate_storage": "Measure selected folders and identify large files and cleanup choices without deleting anything.",
     "network_status": "Read local network adapter status.",
     "run_network_diagnostic": "Run a full read-only adapter, IP, gateway, DNS, internet, latency, packet-loss, and link-speed diagnostic.",
     "check_gateway": "Check the configured default gateway and its reachability.",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .desktop import read_clipboard, take_screenshot, write_clipboard
 from .files import open_user_folder, read_text_file, search_files
+from .storage import investigate_storage
 from ..platform import is_windows
 
 if is_windows():
@@ -50,6 +51,7 @@ else:
     )
 
 READ_ONLY_TOOLS = {
+    "investigate_storage": investigate_storage,
     "cpu_status": cpu_status,
     "ram_status": ram_status,
     "storage_status": storage_status,
@@ -125,6 +127,7 @@ TOOL_METADATA = {
     "cpu_status": {"description": "Read current CPU utilization and core counts.", "risk_level": "read_only", "approval_required": False, "category": "cpu", "timeout": 5, "safe_arguments": {}},
     "ram_status": {"description": "Read current memory use without collecting unrelated system data.", "risk_level": "read_only", "approval_required": False, "category": "memory", "timeout": 5, "safe_arguments": {}},
     "storage_status": {"description": "Read disk capacity and free space.", "risk_level": "read_only", "approval_required": False, "category": "storage", "timeout": 10, "safe_arguments": {}},
+    "investigate_storage": {"description": "Read sizes in selected user folders and Windows temporary files; identify large files and cleanup options without deleting anything.", "risk_level": "read_only", "approval_required": False, "category": "storage", "timeout": 25, "safe_arguments": {}},
     "network_status": {"description": "Read local network adapter status and traffic counters.", "risk_level": "read_only", "approval_required": False, "category": "network", "timeout": 5, "safe_arguments": {}},
     "run_network_diagnostic": {"description": "Run a complete read-only adapter, IP, gateway, DNS, internet, latency, packet-loss, and link-speed diagnostic.", "risk_level": "read_only", "approval_required": False, "category": "network", "timeout": 75, "safe_arguments": {}},
     "check_gateway": {"description": "Read the configured default gateway and measure whether it is reachable.", "risk_level": "read_only", "approval_required": False, "category": "network", "timeout": 25, "safe_arguments": {}},

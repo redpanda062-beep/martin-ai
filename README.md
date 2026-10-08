@@ -91,6 +91,15 @@ The investigation and report separate confirmed conditions, unconfirmed possible
 causes, and normal readings. A threshold crossing alone does not prove why the
 reported problem occurred; failed sensors do not count as normal readings.
 
+Ask `Investigate storage` or `What is taking up space?` for a read-only storage
+investigation. It measures selected user folders and Windows temporary files,
+shows the largest observed files, and suggests cleanup choices. It reads file
+metadata, never file contents, and does not delete or move anything. Scans stop
+after 15 seconds or 30,000 entries, skip links/cloud placeholders, and label
+incomplete sizes as partial lower bounds. This is not a whole-drive scan or an
+exact accounting of allocated disk space. Preserve projects and backups before
+acting on any suggestion.
+
 ## Built-in safety
 
 Martin only opens applications from its approved list. Actions that close apps,

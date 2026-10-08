@@ -39,6 +39,8 @@ def detect_intent(text: str) -> Intent:
         return Intent.CPU_STATUS
     if re.search(r"\b(gpu|graphics card|vram)\b", value):
         return Intent.GPU_STATUS
+    if is_storage_investigation(text):
+        return Intent.TROUBLESHOOTING
     if re.search(r"\b(storage|disk|drive|free space|space left)\b", value):
         return Intent.STORAGE_STATUS
     network_topic = re.search(r"\b(network|internet|wifi|wi fi|ethernet|connection|online|dns|ping|latency|packet loss|websites?)\b", value)
@@ -67,3 +69,9 @@ def detect_intent(text: str) -> Intent:
     if re.search(r"\b(what|what's|whats|how|when|where|who|can you|could you|tell me|explain)\b", value):
         return Intent.GENERAL_CHAT
     return Intent.UNKNOWN
+
+
+def is_storage_investigation(text: str) -> bool:
+    value = text.lower()
+    return bool(re.search(r"\b(storage|disk|drive|space)\b", value) and
+                re.search(r"\b(investigate|analyze|analyse|why|full|taking|using|cleanup|clean up|free up|running out)\b", value))
