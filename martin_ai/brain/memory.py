@@ -29,6 +29,12 @@ def save_report(state: BrainState) -> dict[str, str]:
     ) or "- No usable evidence was collected."
     recommendations = "\n".join(f"- {item}" for item in state.recommendations) or "- None."
     errors = "\n".join(f"- {item}" for item in state.errors) or "- None."
+    history = "\n".join(
+        f"- {item.get('problem', '')}: " +
+        (f"{item.get('repair_id', 'repair')} — " + ("verified after repair" if item.get('verified') else "not verified as a fix")
+         if item.get('kind') == 'repair' else str(item.get('diagnosis', 'Prior investigation recorded.')))
+        for item in state.related_history
+    ) or "- No matching history."
     markdown = (
         f"# Martin AI Investigation\n\n"
         f"Started: {state.started_at}  \nUpdated: {state.updated_at}\n\n"
@@ -37,6 +43,7 @@ def save_report(state: BrainState) -> dict[str, str]:
         f"**Confidence:** {state.confidence}\n\n"
         f"## Evidence\n\n{evidence}\n\n"
         f"## Recommendations\n\n{recommendations}\n\n"
+        f"## Similar past cases\n\nHistorical context only; fresh checks are required.\n\n{history}\n\n"
         f"## Errors or unavailable sensors\n\n{errors}\n"
     )
     md_path.write_text(markdown, encoding="utf-8")

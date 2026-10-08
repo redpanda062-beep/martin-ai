@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from martin_ai.actions import ActionManager
+from martin_ai.memory import MemoryManager
 
 from .evaluator import Evaluator
 from .executor import Executor, UpdateCallback
@@ -16,15 +17,24 @@ class Orchestrator:
     def __init__(self, read_only_tools: dict[str, Callable[..., dict[str, Any]]],
                  repair_tools: dict[str, Callable[..., dict[str, Any]]],
                  policies: dict[str, ToolPolicy], action_manager: ActionManager,
-                 model_client: Callable[[str], str] | None = None) -> None:
+                 model_client: Callable[[str], str] | None = None, *,
+                 memory: MemoryManager | None = None) -> None:
         self.planner = Planner(policies, model_client)
         self.evaluator = Evaluator(policies, model_client)
         self.executor = Executor(read_only_tools, repair_tools, policies, action_manager)
         self.state: BrainState | None = None
+        self.memory = memory
 
     def start(self, request: str, context: dict[str, Any] | None = None,
               update: UpdateCallback | None = None) -> BrainState:
         self.state = BrainState(user_request=request)
+        if self.memory:
+            try:
+                self.state.related_history = self.memory.related_problem_history(request)
+            except Exception:
+                self.state.uncertainty.append("Past problem history could not be loaded.")
+        # Historical text is displayed as context only. It cannot supply tools,
+        # arguments, approval, or fresh diagnostic evidence to the planner.
         if update:
             update("planning", self.state, None)
         self.state.active_plan = self.planner.create_plan(request, context)
@@ -92,6 +102,14 @@ class Orchestrator:
         self.evaluator.finalize(state)
         state.status = BrainStatus.COMPLETED.value
         state.touch()
+        if self.memory:
+            try:
+                self.memory.save_incident("investigation", state.user_request, details={
+                    "diagnosis": state.diagnosis, "confidence": state.confidence,
+                    "recommendations": state.recommendations, "uncertainty": state.uncertainty,
+                })
+            except Exception:
+                state.uncertainty.append("This investigation could not be saved to problem history.")
         try:
             state.report_paths = save_report(state)
         except OSError as exc:

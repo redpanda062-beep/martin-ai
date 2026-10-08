@@ -84,6 +84,30 @@ class PersistentMemoryTests(unittest.TestCase):
         result = handle_memory_command("What do you remember about me?", self.memory)
         self.assertIn("favorite game", result.message.lower())
 
+    def test_related_history_matches_paraphrases_and_excludes_unrelated_cases(self) -> None:
+        self.memory.save_incident("investigation", "Why is my PC slow?", details={"diagnosis": "Check storage."})
+        self.memory.save_incident("investigation", "My PC audio is broken", details={"diagnosis": "Check speakers."})
+        self.memory.db.close()
+        restarted = MemoryManager(Database(self.path))
+        cases = restarted.related_problem_history("My computer is sluggish")
+        self.assertEqual(len(cases), 1)
+        self.assertEqual(cases[0]["diagnosis"], "Check storage.")
+        restarted.db.close()
+
+    def test_past_fix_requires_real_successful_verification(self) -> None:
+        for status, repair, verification in (
+            ("verified", {"success": True}, {"success": True}),
+            ("verified", {"success": True}, {"success": True, "simulated": True}),
+            ("verification_failed", {"success": True}, {"success": False}),
+            ("denied", None, None),
+        ):
+            self.memory.save_repair_history("Why is my PC slow?", [], "test.fix", 2, True,
+                                            repair, verification, None, status)
+        cases = self.memory.related_problem_history("Why is my PC slow?", limit=5)
+        self.assertEqual(sum(case["verified"] for case in cases), 1)
+        self.assertNotIn("verification", cases[0])
+        self.assertNotIn("arguments", cases[0])
+
     def test_forget_persists_after_restart(self) -> None:
         handle_memory_command("Remember that I don't want Discord closed while gaming.", self.memory)
         result = handle_memory_command("Forget what I said about Discord.", self.memory)

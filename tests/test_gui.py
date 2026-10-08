@@ -191,6 +191,20 @@ class GuiTests(unittest.TestCase):
         self.assertNotIn("**", window.conversation.toPlainText())
         window.settings["minimize_to_tray"] = False; window.close()
 
+    def test_investigation_shows_verified_and_unverified_history(self) -> None:
+        from martin_ai.brain import BrainState
+        window = self.make_window()
+        state = BrainState("Why is my PC slow?", status="completed", related_history=[
+            {"kind": "repair", "problem": "PC was sluggish", "repair_id": "test.good", "verified": True},
+            {"kind": "repair", "problem": "PC was sluggish", "repair_id": "test.failed", "verified": False},
+        ])
+        window.brain_finished(state)
+        text = window.brain_output.toPlainText()
+        self.assertIn("Similar Past Cases", text)
+        self.assertIn("verified after repair", text)
+        self.assertIn("not verified as a fix", text)
+        window.settings["minimize_to_tray"] = False; window.close()
+
     def test_security_page_signal_handling(self) -> None:
         window = self.make_window()
         window.apply_security_status({"status": "Needs attention", "defender": {"real_time_protection_enabled": True},

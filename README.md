@@ -78,6 +78,15 @@ The terminal launcher remains `start.bat`. The red-and-black desktop launcher
 remains `start_gui.bat`; its Investigation page shows the plan, live evidence,
 approval state, diagnosis, confidence, recommendations, and sensor errors.
 
+Completed investigations also save a compact problem/diagnosis record in the
+existing SQLite memory. A later investigation shows up to three similar past
+cases, including past self-repair outcomes, on the Investigation page and in
+its report. Historical records are context only: fresh tools collect current
+evidence, and historical text cannot authorize actions or choose tool arguments.
+Only real repairs with successful post-repair verification are labeled verified;
+simulated, denied, failed, and unverified attempts remain visibly distinct.
+Existing reports are preserved; new completed investigations populate this history.
+
 ## Built-in safety
 
 Martin only opens applications from its approved list. Actions that close apps,

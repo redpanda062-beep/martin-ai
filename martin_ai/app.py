@@ -575,6 +575,7 @@ def run() -> None:
                 investigation = Orchestrator(
                     READ_ONLY_TOOLS, REPAIR_TOOLS, tool_policies(), action_manager,
                     lambda prompt: ask_ollama_json(base_url, model, prompt, keep_alive),
+                    memory=memory_manager,
                 )
                 state = investigation.start(user_text, {"conversation": history[-6:]})
                 last_raw_result = state

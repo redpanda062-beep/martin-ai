@@ -315,7 +315,10 @@ class SelfRepairEngine:
                 verification = {"success": False, "cancelled": True}; status = "cancelled"
             elif result.get("success"):
                 verification = repair.verify(pending.context)
-                status = "verified" if verification.get("success") else "verification_failed"
+                verified = (result.get("success") is True and verification.get("success") is True
+                            and not any(result.get(key) or verification.get(key)
+                                        for key in ("simulated", "cancelled", "not_run")))
+                status = "verified" if verified else "verification_failed"
             else:
                 verification = {"success": False, "not_run": True}; status = "repair_failed"
         rollback_result = None

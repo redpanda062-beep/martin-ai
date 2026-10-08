@@ -13,6 +13,7 @@ from martin_ai.brain.executor import Executor
 from martin_ai.brain.memory import save_report
 from martin_ai.brain.planner import Planner
 from martin_ai.brain.policies import ToolPolicy
+from martin_ai.memory import Database, MemoryManager
 
 
 def policy(name: str, protected: bool = False) -> ToolPolicy:
@@ -109,6 +110,27 @@ class ExecutionTests(unittest.TestCase):
 
 
 class EvaluatorAndReportTests(unittest.TestCase):
+    def test_investigations_recall_history_without_executing_historical_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as folder, patch("martin_ai.brain.memory.REPORT_DIR", Path(folder) / "reports"):
+            memory = MemoryManager(Database(Path(folder) / "memory.db"))
+            changes = []
+            memory.save_repair_history("Why is my PC slow?", [], "dangerous_old_action", 3, True,
+                                       {"success": True}, {"success": True}, None, "verified")
+            tools = {"system_summary": lambda: {"success": True, "ram_percent_used": 60}}
+            policies = {"system_summary": policy("system_summary"), "repair": policy("repair", True)}
+            brain = Orchestrator(tools, {"repair": lambda: changes.append(1)}, policies,
+                                 ActionManager({}), memory=memory)
+            first = brain.start("Why is my PC slow?")
+            self.assertEqual(changes, [])
+            self.assertFalse(first.approved_actions)
+            self.assertEqual(first.related_history[0]["repair_id"], "dangerous_old_action")
+            memory.db.close()
+            restarted = MemoryManager(Database(Path(folder) / "memory.db"))
+            second = Orchestrator(tools, {}, policies, ActionManager({}), memory=restarted).start("My computer is sluggish")
+            self.assertTrue(any(case["kind"] == "investigation" for case in second.related_history))
+            self.assertEqual(changes, [])
+            restarted.db.close()
+
     def test_model_receives_threshold_and_event_causality_context(self) -> None:
         prompts = []
         state = BrainState("why is my pc slow", evidence=[

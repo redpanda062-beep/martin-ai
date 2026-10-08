@@ -81,6 +81,13 @@ class SelfRepairTests(unittest.TestCase):
         self.assertEqual(result["status"], "verification_failed")
         self.assertEqual(result["message"], "The repair completed, but the problem is still present.")
 
+    def test_simulated_verification_never_claims_fixed(self):
+        repair = RepairDefinition("test.simulated_verify", "Test", "Test", ("test",), ("check",), 1, False,
+                                  lambda _: {"success": True}, lambda _: {"success": True, "simulated": True}, 5)
+        result = self.engine_with(repair).prepare("test.simulated_verify", "persistent issue")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "verification_failed")
+
     def test_stop_ai_prevents_new_repairs(self):
         calls = []
         repair = RepairDefinition("test.stop", "Test", "Test", ("test",), ("check",), 1, False,

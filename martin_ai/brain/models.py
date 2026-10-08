@@ -66,6 +66,7 @@ class BrainState:
     tool_calls: int = 0
     plan_revisions: int = 0
     report_paths: dict[str, str] = field(default_factory=dict)
+    related_history: list[dict[str, Any]] = field(default_factory=list)
 
     def touch(self) -> None:
         self.updated_at = now_iso()

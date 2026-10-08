@@ -1282,6 +1282,7 @@ class MartinMainWindow(QMainWindow):
         self.brain = Orchestrator(
             READ_ONLY_TOOLS, REPAIR_TOOLS, tool_policies(), action_manager,
             lambda prompt: ask_ollama_json(base_url, model, prompt, keep_alive),
+            memory=memory_manager,
         )
         callback = lambda event, state, step: self.brain_signals.update.emit(event, state, step)
         self.chat_thread = self.run_background(
@@ -1359,6 +1360,17 @@ class MartinMainWindow(QMainWindow):
         uncertainty = getattr(state, "uncertainty", [])
         if uncertainty:
             sections.append("**Uncertainty**\n\n" + "\n".join(f"- {line}" for line in uncertainty))
+        history = getattr(state, "related_history", [])
+        if history:
+            lines = []
+            for case in history:
+                if case.get("kind") == "repair":
+                    outcome = "verified after repair" if case.get("verified") else "not verified as a fix"
+                    lines.append(f"{case.get('problem', '')}: {case.get('repair_id', 'repair')} — {outcome}.")
+                else:
+                    lines.append(f"{case.get('problem', '')}: {case.get('diagnosis', 'Prior investigation recorded.')}")
+            sections.append("**Similar Past Cases**\n\nHistorical context; fresh checks are still required.\n\n"
+                            + "\n".join(f"- {line}" for line in lines))
         return "\n\n".join(sections)
 
     def _set_brain_buttons(self, waiting: bool, failed: bool, report: bool) -> None:

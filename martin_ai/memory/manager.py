@@ -17,6 +17,8 @@ _CONCEPTS = {
     "short": {"short", "brief", "concise", "compact", "succinct"},
     "gaming": {"game", "games", "gaming", "gamer"},
     "computer": {"pc", "computer", "system", "machine"},
+    "performance": {"slow", "sluggish", "slowness", "laggy"},
+    "network": {"network", "internet", "wifi", "wi-fi"},
 }
 _TOKEN_CONCEPT = {word: concept for concept, words in _CONCEPTS.items() for word in words}
 _QUERY_STOP_WORDS = {"what", "do", "did", "you", "remember", "about", "how", "i", "me", "my", "the", "a", "an", "that", "to", "of", "is", "are"}
@@ -165,6 +167,48 @@ class MemoryManager:
                 item.pop(key, None)
             result.append(item)
         return result
+
+    def related_problem_history(self, problem: str, *, limit: int = 3) -> list[dict[str, Any]]:
+        """Return bounded historical context, never authorization or executable arguments."""
+        stop = {"why", "please", "check", "again", "problem", "issue", "having", "help", "with"}
+        query = semantic_terms(problem) - stop
+        if not query:
+            return []
+        candidates = []
+        rows = self.db.connection().execute(
+            "SELECT id,created_at,problem,details_json FROM incidents WHERE kind='investigation' "
+            "ORDER BY id DESC LIMIT 100"
+        ).fetchall()
+        for row in rows:
+            try:
+                details = json.loads(row["details_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(details, dict):
+                continue
+            candidates.append({"kind": "investigation", "id": row["id"], "timestamp": row["created_at"],
+                               "problem": row["problem"], "diagnosis": str(details.get("diagnosis", ""))[:500],
+                               "confidence": str(details.get("confidence", "low")), "status": "recorded"})
+        for repair in self.repair_history(limit=100):
+            result, verification = repair.get("repair_result") or {}, repair.get("verification") or {}
+            verified = (repair["status"] == "verified" and isinstance(result, dict)
+                        and isinstance(verification, dict) and result.get("success") is True
+                        and verification.get("success") is True
+                        and not any(result.get(key) or verification.get(key)
+                                    for key in ("simulated", "cancelled", "not_run")))
+            candidates.append({"kind": "repair", "id": repair["id"], "timestamp": repair["timestamp"],
+                               "problem": repair["problem"], "repair_id": repair["repair_id"],
+                               "status": repair["status"], "verified": verified})
+        ranked = []
+        for item in candidates:
+            terms = semantic_terms(item["problem"]) - stop
+            overlap = len(query & terms)
+            exact = problem.strip().lower() == item["problem"].strip().lower()
+            score = overlap / max(len(query | terms), 1)
+            if exact or (overlap >= 2 and score >= .4):
+                ranked.append((int(exact), score, item["timestamp"], item))
+        ranked.sort(key=lambda item: item[:3], reverse=True)
+        return [item[3] for item in ranked[:max(1, min(int(limit), 5))]]
 
     @staticmethod
     def memory_key(content: str) -> str:
