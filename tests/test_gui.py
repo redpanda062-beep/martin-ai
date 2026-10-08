@@ -161,10 +161,35 @@ class GuiTests(unittest.TestCase):
         state = BrainState("Why is RAM high?", [PlanStep("1", "Check RAM", "system_summary")])
         window.apply_brain_update("step_started", state, state.active_plan[0])
         self.assertIn("Check RAM", window.brain_status.text())
-        self.assertIn("All Good", window.brain_output.toPlainText())
+        self.assertIn("Investigation in Progress", window.brain_output.toPlainText())
+        self.assertIn("Check RAM", window.brain_output.toPlainText())
+        self.assertNotIn("**", window.brain_output.toPlainText())
         self.assertNotIn("system_summary", window.brain_output.toPlainText())
         window.settings["minimize_to_tray"] = False
         window.close()
+
+    def test_completed_investigation_renders_evidence_and_uncertainty(self) -> None:
+        from martin_ai.brain import BrainState
+        window = self.make_window()
+        state = BrainState("why is my pc slow", status="completed", confidence="medium",
+                           diagnosis="Review recent events.", uncertainty=["Cause is not confirmed."],
+                           evidence=[{"tool": "system_summary", "result": {"ram_percent_used": 72.9}},
+                                     {"tool": "recent_windows_errors", "result": {"events": [{}, {}]}}])
+        window.brain_finished(state)
+        text = window.brain_output.toPlainText()
+        self.assertIn("72.9%", text)
+        self.assertIn("2 recent", text)
+        self.assertIn("Cause is not confirmed", text)
+        self.assertNotIn("**", text)
+        self.assertNotIn("All Good", text)
+        window.settings["minimize_to_tray"] = False; window.close()
+
+    def test_chat_renders_bold_memory_figures_without_markers(self) -> None:
+        window = self.make_window()
+        window.append_message("Martin AI", "You're using about **11.1 GB**.", False)
+        self.assertIn("11.1 GB", window.conversation.toPlainText())
+        self.assertNotIn("**", window.conversation.toPlainText())
+        window.settings["minimize_to_tray"] = False; window.close()
 
     def test_security_page_signal_handling(self) -> None:
         window = self.make_window()

@@ -13,9 +13,23 @@ from martin_ai.response_formatter import (
 from martin_ai.router import route_command
 from martin_ai.intent import Intent, detect_intent
 from martin_ai.alert_manager import AlertManager
+from martin_ai.brain import BrainState
 
 
 class ResponseFormatterTests(unittest.TestCase):
+    def test_completed_assessment_is_not_labeled_all_good(self) -> None:
+        state = BrainState("why is my pc slow", status="completed",
+                           diagnosis="Recent warnings may need investigation.",
+                           evidence=[{"tool": "system_summary", "result": {"ram_percent_used": 72.9}}])
+        text = format_response(state)
+        self.assertIn("Investigation Complete", text)
+        self.assertNotIn("All Good", text)
+
+    def test_inconclusive_assessment_does_not_claim_healthy(self) -> None:
+        state = BrainState("why is my pc slow", status="completed", diagnosis="The investigation was inconclusive.")
+        self.assertIn("Inconclusive", format_response(state))
+        self.assertNotIn("All Good", format_response(state))
+
     def test_required_intents_are_detected_before_tools(self) -> None:
         cases = {
             "hey ai": Intent.GREETING,

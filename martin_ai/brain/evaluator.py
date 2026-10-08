@@ -25,7 +25,10 @@ class Evaluator:
             try:
                 raw = json.loads(self.model_client(
                     "Return JSON only with diagnosis, confidence (low/medium/high), uncertainty array, "
-                    "and recommendations array. Use only this evidence: " + json.dumps(observations, default=str)
+                    "and recommendations array. Use only this evidence. Respect the stated sensor thresholds; "
+                    "recent warning/error counts alone cannot establish instability or the cause of slowness. "
+                    "If no threshold is exceeded, say no clear resource threshold problem was found, and "
+                    "distinguish hypotheses from confirmed findings. Evidence: " + json.dumps(observations, default=str)
                 ))
                 if isinstance(raw, dict) and raw.get("diagnosis"):
                     state.diagnosis = str(raw["diagnosis"])
@@ -59,7 +62,7 @@ class Evaluator:
             if tool == "system_summary":
                 ram = result.get("ram_percent_used")
                 if isinstance(ram, (int, float)):
-                    found.append(f"RAM usage was {ram}%.")
+                    found.append(f"RAM usage was {ram}% (high-pressure threshold: 90%).")
                     if ram >= 90:
                         found.append("ALERT: High system-memory pressure is the likely cause.")
                         recs.append("Close an approved memory-heavy app before launching the game.")
@@ -83,7 +86,8 @@ class Evaluator:
             elif tool == "recent_windows_errors":
                 events = result.get("events", [])
                 if events:
-                    found.append(f"Windows reported {len(events)} recent relevant error or warning events.")
+                    found.append(f"Windows reported {len(events)} recent relevant error or warning events. "
+                                 "Their relationship to this problem is unconfirmed.")
         return found, list(dict.fromkeys(recs))
 
     def _rule_revision(self, state: BrainState) -> list[PlanStep]:

@@ -109,6 +109,17 @@ class ExecutionTests(unittest.TestCase):
 
 
 class EvaluatorAndReportTests(unittest.TestCase):
+    def test_model_receives_threshold_and_event_causality_context(self) -> None:
+        prompts = []
+        state = BrainState("why is my pc slow", evidence=[
+            {"tool": "system_summary", "result": {"ram_percent_used": 72.9}},
+            {"tool": "recent_windows_errors", "result": {"events": [{}, {}]}},
+        ])
+        Evaluator({}, lambda prompt: prompts.append(prompt) or "{}").finalize(state)
+        self.assertIn("high-pressure threshold: 90%", prompts[0])
+        self.assertIn("relationship to this problem is unconfirmed", prompts[0])
+        self.assertNotIn("High system-memory pressure", state.diagnosis)
+
     def test_evaluator_plan_revision(self) -> None:
         state = BrainState("RAM high", evidence=[{"tool": "system_summary", "result": {"ram_percent_used": 94}}])
         revision = Evaluator({"top_processes": policy("top_processes")}).review(state)

@@ -178,15 +178,21 @@ def _generic_dict(result: dict[str, Any], context: dict[str, Any]) -> str:
 
 
 def _investigation(state: Any) -> str:
+    status = getattr(state, "status", "completed")
+    if status == "waiting_for_approval":
+        return "**Approval Required**\n\nThe investigation is paused until you approve or deny the proposed action."
+    if status in {"planning", "investigating", "evaluating"}:
+        return "**Investigation in Progress**\n\nMartin is collecting and reviewing evidence. No conclusion is ready yet."
+    if status in {"cancelled", "failed"}:
+        return f"**Investigation {status.capitalize()}**\n\nThe investigation did not complete. Review the action log and collected evidence."
     diagnosis = str(getattr(state, "diagnosis", "") or "").strip()
     recommendations = [str(item) for item in getattr(state, "recommendations", []) if item]
     errors = list(getattr(state, "errors", []))
     evidence = list(getattr(state, "evidence", []))
-    request = str(getattr(state, "user_request", "")).lower()
     for item in evidence:
         if item.get("tool") == "system_summary" and isinstance(item.get("result"), dict):
             summary = _system_summary(item["result"])
-            if "All Good" not in summary and any(word in request for word in ("health", "storage", "disk", "drive", "space")):
+            if "All Good" not in summary:
                 return summary
     serious = "alert:" in diagnosis.lower() or any(word in diagnosis.lower() for word in ("critical", "high pressure", "likely cause"))
     if serious:
@@ -197,8 +203,8 @@ def _investigation(state: Any) -> str:
         return "**Problem Found**\n\nI could not complete the diagnostic check. Please try again."
     if diagnosis and "inconclusive" not in diagnosis.lower():
         action = f" {recommendations[0]}" if recommendations else " No action is needed."
-        return f"**All Good**\n\n{diagnosis}{action}"
-    return "**All Good**\n\nNo important problem was found. No action is needed."
+        return f"**Investigation Complete**\n\n{diagnosis}{action}"
+    return "**Inconclusive**\n\nThe collected evidence did not establish a cause."
 
 
 def format_response(raw_result: Any, context: dict[str, Any] | None = None, simple_mode: bool = SIMPLE_MODE) -> str:

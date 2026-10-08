@@ -515,7 +515,7 @@ class MartinMainWindow(QMainWindow):
         self.brain_problem.setWordWrap(True)
         self.brain_problem.setStyleSheet("font-size:18px;font-weight:700;color:#ff4040")
         self.brain_status = QLabel("Status: idle")
-        self.brain_output = QPlainTextEdit()
+        self.brain_output = QTextBrowser()
         self.brain_output.setReadOnly(True)
         self.action_log = QListWidget()
         self.action_log.setMaximumHeight(130)
@@ -1299,7 +1299,7 @@ class MartinMainWindow(QMainWindow):
             label = f"Step {getattr(step, 'step_id', '?')}: {getattr(step, 'goal', '')}"
         self.loading.setText(label)
         self.brain_status.setText(f"Status: {getattr(state, 'status', 'unknown')} | {label}")
-        self.brain_output.setPlainText(self._brain_detail(state))
+        self.brain_output.setMarkdown(self._brain_detail(state))
         action = {
             "step_started": f"Checking: {getattr(step, 'goal', 'system information')}",
             "step_completed": f"Checked: {getattr(step, 'goal', 'system information')}",
@@ -1314,7 +1314,7 @@ class MartinMainWindow(QMainWindow):
     def brain_finished(self, state: object) -> None:
         if self.closing:
             return
-        self.brain_output.setPlainText(self._brain_detail(state))
+        self.brain_output.setMarkdown(self._brain_detail(state))
         self.last_raw_response = state
         status = getattr(state, "status", "failed")
         waiting = status == BrainStatus.WAITING_FOR_APPROVAL.value
@@ -1331,7 +1331,35 @@ class MartinMainWindow(QMainWindow):
         self._finish_chat()
 
     def _brain_detail(self, state: object) -> str:
-        return format_response(state, {"kind": "autonomy"})
+        sections = [format_response(state, {"kind": "autonomy"})]
+        plan = getattr(state, "active_plan", [])
+        if plan:
+            sections.append("**Plan**\n\n" + "\n".join(
+                f"{index}. {step.goal} — {step.status.replace('_', ' ')}"
+                for index, step in enumerate(plan, 1)))
+        evidence = []
+        for item in getattr(state, "evidence", []):
+            tool, result = item.get("tool"), item.get("result", {})
+            if not isinstance(result, dict):
+                continue
+            if tool == "system_summary" and isinstance(result.get("ram_percent_used"), (int, float)):
+                ram = result["ram_percent_used"]
+                condition = "high memory pressure" if ram >= 90 else "below the 90% high-pressure threshold"
+                evidence.append(f"RAM: {ram:g}% used; {condition}.")
+            elif tool == "recent_windows_errors" and isinstance(result.get("events"), list):
+                evidence.append(f"Windows: {len(result['events'])} recent warning/error events; a cause is not confirmed by the count alone.")
+            elif tool == "top_processes":
+                for process in result.get("highest_memory", [])[:3]:
+                    if isinstance(process.get("memory_mb"), (int, float)):
+                        evidence.append(f"Memory use: {process.get('name', 'Application')} — {process['memory_mb']:g} MB.")
+        if evidence:
+            sections.append("**Evidence**\n\n" + "\n".join(f"- {line}" for line in evidence))
+        if getattr(state, "diagnosis", ""):
+            sections.append(f"**Confidence:** {getattr(state, 'confidence', 'low')}")
+        uncertainty = getattr(state, "uncertainty", [])
+        if uncertainty:
+            sections.append("**Uncertainty**\n\n" + "\n".join(f"- {line}" for line in uncertainty))
+        return "\n\n".join(sections)
 
     def _set_brain_buttons(self, waiting: bool, failed: bool, report: bool) -> None:
         self.brain_approve.setEnabled(waiting)
@@ -1350,7 +1378,7 @@ class MartinMainWindow(QMainWindow):
     def cancel_investigation(self) -> None:
         if self.brain:
             state = self.brain.cancel(lambda event, value, step: self.brain_signals.update.emit(event, value, step))
-            self.brain_output.setPlainText(self._brain_detail(state))
+            self.brain_output.setMarkdown(self._brain_detail(state))
             self._set_brain_buttons(False, False, False)
 
     def retry_investigation(self) -> None:
