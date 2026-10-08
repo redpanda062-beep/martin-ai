@@ -18,6 +18,25 @@ from martin_ai.router import route_command
 
 
 class GuiTests(unittest.TestCase):
+    def test_followup_uses_completed_investigation_without_running_tools(self):
+        from martin_ai.brain import BrainState
+        window = self.make_window()
+        window.brain_finished(BrainState("storage", status="completed", evidence=[{
+            "tool": "investigate_storage", "result": {"success": True, "largest_files": [
+                {"path": r"C:\Users\test\AppData\Roaming\Vortex\downloads\game\mod.zip", "bytes": 2**30}
+            ]}}]))
+        window.last_raw_response = "An unrelated chat response"
+        with patch("martin_ai.gui_app.route_command") as router, patch.object(window, "start_investigation") as investigate:
+            window.chat_input.setPlainText("What is that Vortex file?")
+            window.send_message()
+            router.assert_not_called()
+            investigate.assert_not_called()
+        self.assertIn("installation status was not checked", window.conversation.toPlainText())
+        phone = window.remote_chat("Explain that Vortex file", {})
+        self.assertEqual(phone["intent"], "investigation_followup")
+        window.settings["minimize_to_tray"] = False
+        window.close()
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = create_application(["test_gui"])

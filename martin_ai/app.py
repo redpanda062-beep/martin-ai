@@ -21,6 +21,7 @@ from .brain import BrainStatus, Orchestrator
 from .bootstrap import execute_registered, self_repair_engine, runtime_control
 from .response_formatter import format_response, technical_details, wants_technical_details
 from .intent import Intent, detect_intent
+from .investigation_followup import answer_investigation_followup
 from .ollama_manager import OllamaConfig, ollama_manager
 
 
@@ -496,6 +497,7 @@ def run() -> None:
     history: list[dict[str, Any]] = []
     investigation: Orchestrator | None = None
     last_raw_result: Any = None
+    last_investigation: Any = None
 
     while True:
         user_text = Prompt.ask("\n[bold cyan]You[/bold cyan]").strip()
@@ -537,6 +539,13 @@ def run() -> None:
                 console.print(Panel(format_investigation(state), title="Investigation", border_style="yellow"))
                 continue
 
+        if investigation and investigation.state and investigation.state.status == BrainStatus.COMPLETED.value:
+            last_investigation = investigation.state
+        followup = answer_investigation_followup(user_text, last_investigation)
+        if followup is not None:
+            history.extend([{"role": "user", "content": user_text}, {"role": "assistant", "content": followup}])
+            console.print(Panel(followup, title="Investigation Follow-up", border_style="green"))
+            continue
         routed = route_command(user_text, action_manager, memory_manager,
                                bool(settings.get("memory", {}).get("automatic_enabled", True)))
         if routed.handled:

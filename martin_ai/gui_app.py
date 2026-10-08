@@ -222,6 +222,7 @@ class MartinMainWindow(QMainWindow):
         self.chat_thread: QThread | None = None
         self.chat_cancel_event: threading.Event | None = None
         self.last_raw_response: Any = None
+        self.last_investigation: Any = None
         self.brain: Orchestrator | None = None
         self.live_refresh_running = False
         self.crash_refresh_running = False
@@ -1009,6 +1010,10 @@ class MartinMainWindow(QMainWindow):
         return {"success": False, "error": "Unknown mobile resource"}
 
     def remote_chat(self, message: str, _device: dict[str, Any]) -> dict[str, Any]:
+        from .investigation_followup import answer_investigation_followup
+        followup = answer_investigation_followup(message, self.last_investigation)
+        if followup is not None:
+            return {"success": True, "message": followup, "intent": "investigation_followup"}
         routed = route_command(message, action_manager, memory_manager,
                                bool(self.agent_settings.get("memory", {}).get("automatic_enabled", True)), self_repair_engine)
         if routed.handled: return {"success": True, "message": routed.message, "intent": routed.intent}
@@ -1216,6 +1221,12 @@ class MartinMainWindow(QMainWindow):
             self.append_message("Martin AI", technical_details(self.last_raw_response), False)
             return
         automatic_memory = bool(self.agent_settings.get("memory", {}).get("automatic_enabled", True))
+        from .investigation_followup import answer_investigation_followup
+        followup = answer_investigation_followup(text, self.last_investigation)
+        if followup is not None:
+            self.history.extend([{"role": "user", "content": text}, {"role": "assistant", "content": followup}])
+            self.append_message("Martin AI", followup, False)
+            return
         routed = route_command(text, action_manager, memory_manager, automatic_memory, self_repair_engine)
         if routed.handled:
             if routed.raw_result is not None:
@@ -1321,6 +1332,8 @@ class MartinMainWindow(QMainWindow):
         status = getattr(state, "status", "failed")
         waiting = status == BrainStatus.WAITING_FOR_APPROVAL.value
         complete = status == BrainStatus.COMPLETED.value
+        if complete:
+            self.last_investigation = state
         failed = any(getattr(step, "status", "") == "failed" for step in getattr(state, "active_plan", []))
         self._set_brain_buttons(waiting, failed, complete)
         if waiting:

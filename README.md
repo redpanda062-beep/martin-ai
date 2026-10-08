@@ -106,6 +106,13 @@ paths, not names alone. Vortex installation status and disposable-file status
 are not inferred; listed logical sizes are not promised recoverable space.
 The cache and archive explanations follow [NVIDIA's cache guidance](https://nvidia.custhelp.com/app/answers/detail/a_id/5735/)
 and [Vortex's storage documentation](https://github.com/Nexus-Mods/Vortex/wiki/MODDINGWIKI-Users-General-Moving-Vortex-to-a-new-PC).
+After an investigation, ask `What is that Vortex file?`, `Explain that NVIDIA
+cache file`, or `Explain that RAM result`. Follow-ups use the latest completed
+investigation in the current session and identify it as an older snapshot;
+they do not call the model, rerun tools, or authorize changes. Ordinary fresh
+status checks still run normally. Phone chat can explain the desktop's retained
+investigation too. Restarting Martin clears this follow-up context; run a new
+investigation first. Ambiguous file questions ask you to identify the file.
 
 ## Built-in safety
 
