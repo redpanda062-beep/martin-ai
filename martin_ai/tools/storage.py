@@ -41,6 +41,37 @@ def _excluded(info) -> bool:
                                             (0x400 | 0x1000 | 0x40000 | 0x400000))
 
 
+def _file_category(file: dict[str, Any]) -> str:
+    path = str(file.get("path", "")).replace("\\", "/").lower()
+    parts = path.split("/")
+    # Recognize ownership from the directory, never from a filename alone.
+    if any("backup" in part or part.startswith(("martinai", "martin-ai")) for part in parts):
+        return "Projects or backups"
+    if "/appdata/local/nvidia/dxcache/" in path and path.endswith(".nvph"):
+        return "NVIDIA shader cache"
+    if "/appdata/roaming/vortex/downloads/" in path and path.endswith((".zip", ".7z", ".rar")):
+        return "Vortex mod archives"
+    if file.get("location") in {"Downloads", "Documents", "Desktop", "Videos", "Pictures", "Music"}:
+        return "Personal files"
+    return "Application data or unclassified files"
+
+
+def _cleanup_suggestions(files: list[dict[str, Any]]) -> list[str]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for file in files:
+        groups.setdefault(_file_category(file), []).append(file)
+    advice = {
+        "NVIDIA shader cache": "These paths match NVIDIA's shader cache. Close games before reviewing [NVIDIA's cache-cleanup procedure](https://nvidia.custhelp.com/app/answers/detail/a_id/5735/). Cache files are recreated when games or apps run; this is a space-management option, not proof of a performance fix.",
+        "Vortex mod archives": "These paths match downloaded mod installation archives, not the mod staging folder. Review Vortex Settings > Download > Downloads folder and consider moving the download folder through Vortex to another drive. Keep archives needed for reinstalling mods; installation status was not checked.",
+        "Projects or backups": "Preserve these files. Confirm another usable copy or backup before considering a move; no file is identified as disposable.",
+        "Personal files": "Review the listed files individually. Consider moving wanted files to another drive after checking the copy, or removing unwanted files yourself. Their names and sizes do not establish whether they are needed.",
+        "Application data or unclassified files": "The scan cannot establish what owns these files or whether they are disposable. Review them in the owning application; do not delete AppData folders based on size alone.",
+    }
+    return [f"{category}: {len(items)} large file(s), {sum(file['bytes'] for file in items) / 2**30:.2f} GB observed. "
+            + advice[category] + " This is the sum of listed logical file sizes, not guaranteed reclaimable space."
+            for category, items in groups.items()]
+
+
 def _scan_locations(locations: list[tuple[str, Path]], *, max_entries: int = 30000,
                     seconds: float = 15) -> dict[str, Any]:
     deadline = time.monotonic() + seconds
@@ -77,10 +108,8 @@ def _scan_locations(locations: list[tuple[str, Path]], *, max_entries: int = 300
             "partial": any(not row["complete"] for row in rows), "entries_examined": examined,
             "locations": sorted(rows, key=lambda row: row["bytes"], reverse=True),
             "largest_files": largest,
-            "suggestions": [
-                "Review Downloads and large personal files; preserve projects and backups before moving anything.",
-                "Use Windows Settings > System > Storage > Temporary files to review cleanup choices.",
-                "Uninstall unused apps through Windows Settings rather than deleting application folders.",
+            "suggestions": _cleanup_suggestions(largest) or [
+                "No large files were identified in this scan. Review Windows Settings > System > Storage for additional storage categories.",
             ]}
 
 

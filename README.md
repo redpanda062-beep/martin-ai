@@ -99,6 +99,13 @@ after 15 seconds or 30,000 entries, skip links/cloud placeholders, and label
 incomplete sizes as partial lower bounds. This is not a whole-drive scan or an
 exact accounting of allocated disk space. Preserve projects and backups before
 acting on any suggestion.
+Cleanup advice now reflects the listed files: recognized NVIDIA DXCache files,
+Vortex download archives, projects/backups, personal files, and unclassified
+application data get different review options. Classification uses directory
+paths, not names alone. Vortex installation status and disposable-file status
+are not inferred; listed logical sizes are not promised recoverable space.
+The cache and archive explanations follow [NVIDIA's cache guidance](https://nvidia.custhelp.com/app/answers/detail/a_id/5735/)
+and [Vortex's storage documentation](https://github.com/Nexus-Mods/Vortex/wiki/MODDINGWIKI-Users-General-Moving-Vortex-to-a-new-PC).
 
 ## Built-in safety
 

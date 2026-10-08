@@ -89,7 +89,7 @@ class Evaluator:
                     finding = f"{location.get('name')}: {size:.2f} GB observed" + (" (partial count)." if not location.get("complete") else ".")
                     state.confirmed_findings.append(finding)
                     found.append(finding)
-                for file in result.get("largest_files", [])[:3]:
+                for file in result.get("largest_files", [])[:10]:
                     state.confirmed_findings.append(f"Large file observed: {file.get('path')} ({file.get('bytes', 0) / 2**30:.2f} GB).")
                 recs.extend(str(line) for line in result.get("suggestions", []))
             elif tool == "game_status" and result.get("game"):

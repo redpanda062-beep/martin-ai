@@ -11,10 +11,43 @@ from martin_ai.brain.planner import Planner
 from martin_ai.intent import Intent, detect_intent
 from martin_ai.response_formatter import format_response
 from martin_ai.tools import tool_policies
-from martin_ai.tools.storage import _excluded, _scan_locations
+from martin_ai.tools.storage import _cleanup_suggestions, _excluded, _file_category, _scan_locations
 
 
 class StorageInvestigationTests(unittest.TestCase):
+    def test_screenshot_findings_produce_specific_review_options(self):
+        files = [
+            {"path": r"C:\Users\test\AppData\Roaming\Vortex\downloads\game\mod.zip", "bytes": int(6.74 * 2**30)},
+            {"path": r"C:\Users\test\AppData\Local\NVIDIA\DXCache\one.nvph", "bytes": 4 * 2**30},
+            {"path": r"C:\Users\test\AppData\Local\NVIDIA\DXCache\two.nvph", "bytes": 4 * 2**30},
+        ]
+        suggestions = _cleanup_suggestions(files)
+        text = "\n".join(suggestions)
+        self.assertIn("Vortex mod archives: 1 large file(s), 6.74 GB", text)
+        self.assertIn("NVIDIA shader cache: 2 large file(s), 8.00 GB", text)
+        self.assertIn("moving the download folder through Vortex", text)
+        self.assertIn("installation status was not checked", text)
+        self.assertIn("not guaranteed reclaimable space", text)
+        state = BrainState("Investigate storage", status="completed", evidence=[{
+            "tool": "investigate_storage", "result": {"success": True, "largest_files": files,
+            "locations": [{"name": "AppData", "bytes": 16 * 2**30, "complete": False}],
+            "suggestions": suggestions}}])
+        Evaluator({}).finalize(state)
+        self.assertIn("NVIDIA shader cache", format_response(state))
+        self.assertIn("Vortex mod archives", format_response(state))
+
+    def test_cache_names_outside_recognized_paths_are_not_treated_as_cache(self):
+        for path in (r"C:\Downloads\DXCache\one.nvph", r"C:\AppData\Local\NVIDIA\DXCache-old\one.nvph",
+                     r"C:\AppData\Roaming\Vortex\mods\mod.zip"):
+            file = {"path": path, "bytes": 100}
+            self.assertEqual(_file_category(file), "Application data or unclassified files")
+            self.assertIn("cannot establish", _cleanup_suggestions([file])[0])
+
+    def test_backups_override_personal_file_cleanup_advice(self):
+        file = {"path": r"C:\Users\test\Documents\MartinAI Backups\project.zip", "bytes": 100, "location": "Documents"}
+        self.assertEqual(_file_category(file), "Projects or backups")
+        self.assertIn("Preserve these files", _cleanup_suggestions([file])[0])
+
     def test_counts_metadata_and_leaves_files_unchanged(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
