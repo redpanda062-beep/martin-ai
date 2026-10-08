@@ -33,6 +33,7 @@ def _category_and_key(content: str) -> tuple[str, str | None]:
 
 
 def _is_memory_recall(lower: str) -> bool:
+    lower = re.sub(r"^(?:no[,\s]+)?(?:i'm|im|i am) asking[,\s]+", "", lower)
     return bool(
         "what do you remember" in lower or "what did i tell you" in lower
         or re.match(r"^how do i like (?:you to (?:respond|reply|answer)|(?:your|my) (?:answers?|responses?|replies))\b", lower)

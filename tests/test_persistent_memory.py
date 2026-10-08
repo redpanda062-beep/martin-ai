@@ -65,8 +65,11 @@ class PersistentMemoryTests(unittest.TestCase):
         handle_memory_command("Remember that I prefer short answers.", self.memory)
         for wording in (
             "How do I like your answers?",
+            "how do i like my answers",
             "How do I like my responses?",
             "How do I like you to answer?",
+            "no im asking how do i like my answers?",
+            "No, I'm asking how do I like your answers?",
         ):
             with self.subTest(wording=wording), patch("martin_ai.router.READ_ONLY_TOOLS") as tools:
                 result = route_command(wording, ActionManager({}), self.memory)
