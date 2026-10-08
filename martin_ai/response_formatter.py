@@ -177,6 +177,17 @@ def _generic_dict(result: dict[str, Any], context: dict[str, Any]) -> str:
     return "**All Good**\n\nThe requested check completed successfully."
 
 
+def investigation_assessment(state: Any) -> str:
+    sections = []
+    for field, title in (("confirmed_findings", "Confirmed Findings"),
+                         ("possible_causes", "Possible Causes — Unconfirmed"),
+                         ("normal_readings", "Normal Readings")):
+        lines = getattr(state, field, [])
+        if lines:
+            sections.append(f"**{title}**\n\n" + "\n".join(f"- {line}" for line in lines))
+    return "\n\n".join(sections)
+
+
 def _investigation(state: Any) -> str:
     status = getattr(state, "status", "completed")
     if status == "waiting_for_approval":
@@ -189,6 +200,10 @@ def _investigation(state: Any) -> str:
     recommendations = [str(item) for item in getattr(state, "recommendations", []) if item]
     errors = list(getattr(state, "errors", []))
     evidence = list(getattr(state, "evidence", []))
+    assessment = investigation_assessment(state)
+    if assessment:
+        action = f"\n\n**Next check:** {recommendations[0]}" if recommendations else ""
+        return f"**Investigation Complete**\n\n{diagnosis}\n\n{assessment}{action}"
     for item in evidence:
         if item.get("tool") == "system_summary" and isinstance(item.get("result"), dict):
             summary = _system_summary(item["result"])

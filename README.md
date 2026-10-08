@@ -86,6 +86,10 @@ evidence, and historical text cannot authorize actions or choose tool arguments.
 Only real repairs with successful post-repair verification are labeled verified;
 simulated, denied, failed, and unverified attempts remain visibly distinct.
 Existing reports are preserved; new completed investigations populate this history.
+Sensor conclusions use measured thresholds rather than generated causal claims.
+The investigation and report separate confirmed conditions, unconfirmed possible
+causes, and normal readings. A threshold crossing alone does not prove why the
+reported problem occurred; failed sensors do not count as normal readings.
 
 ## Built-in safety
 

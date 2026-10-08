@@ -17,6 +17,20 @@ from martin_ai.brain import BrainState
 
 
 class ResponseFormatterTests(unittest.TestCase):
+    def test_measured_assessment_is_shown_without_replacing_it_with_storage_warning(self) -> None:
+        from martin_ai.brain.evaluator import Evaluator
+        state = BrainState("why is my pc slow", status="completed", evidence=[
+            {"tool": "system_summary", "result": {"ram_percent_used": 71.9,
+                "disks": [{"device": "C:", "free_gb": 19.4}]}},
+        ])
+        Evaluator({}).finalize(state)
+        text = format_response(state)
+        for heading in ("Confirmed Findings", "Possible Causes", "Normal Readings"):
+            self.assertIn(heading, text)
+        self.assertIn("71.9%", text)
+        self.assertNotIn("near", text)
+        self.assertNotIn("likely cause", text)
+
     def test_completed_assessment_is_not_labeled_all_good(self) -> None:
         state = BrainState("why is my pc slow", status="completed",
                            diagnosis="Recent warnings may need investigation.",

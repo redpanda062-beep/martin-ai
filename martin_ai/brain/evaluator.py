@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Callable
 
 from .models import BrainState, PlanStep
@@ -21,29 +20,12 @@ class Evaluator:
 
     def finalize(self, state: BrainState) -> None:
         observations, recommendations = self._observations(state)
-        if self.model_client and observations:
-            try:
-                raw = json.loads(self.model_client(
-                    "Return JSON only with diagnosis, confidence (low/medium/high), uncertainty array, "
-                    "and recommendations array. Use only this evidence. Respect the stated sensor thresholds; "
-                    "recent warning/error counts alone cannot establish instability or the cause of slowness. "
-                    "If no threshold is exceeded, say no clear resource threshold problem was found, and "
-                    "distinguish hypotheses from confirmed findings. Evidence: " + json.dumps(observations, default=str)
-                ))
-                if isinstance(raw, dict) and raw.get("diagnosis"):
-                    state.diagnosis = str(raw["diagnosis"])
-                    state.confidence = str(raw.get("confidence", "medium")).lower()
-                    if state.confidence not in {"low", "medium", "high"}:
-                        state.confidence = "low"
-                    state.uncertainty = [str(x) for x in raw.get("uncertainty", [])][:5]
-                    state.recommendations = [str(x) for x in raw.get("recommendations", [])][:6]
-                    return
-            except Exception:
-                pass
+        # Sensor classifications come from measurements, not generated wording.
+        # A threshold crossing confirms a condition, not the cause of the request.
         alerts = [item for item in observations if item.startswith("ALERT:")]
         if alerts:
             state.diagnosis = alerts[0].removeprefix("ALERT: ")
-            state.confidence = "high" if len(alerts) > 1 else "medium"
+            state.confidence = "medium"
         elif observations:
             state.diagnosis = "No clear resource or sensor threshold problem was found in the collected snapshot."
             state.confidence = "medium"
@@ -51,25 +33,51 @@ class Evaluator:
             state.diagnosis = "The investigation was inconclusive because no usable evidence was available."
             state.confidence = "low"
         state.recommendations = recommendations or ["Reproduce the issue while Martin's game monitor is active, then investigate again."]
+        if observations:
+            state.uncertainty.append("These snapshot readings do not establish the cause of the reported problem.")
         if state.errors:
             state.uncertainty.append("Some tools or sensors were unavailable; see errors.")
 
     def _observations(self, state: BrainState) -> tuple[list[str], list[str]]:
         found: list[str] = []
         recs: list[str] = []
+        state.confirmed_findings = []
+        state.possible_causes = []
+        state.normal_readings = []
         for item in state.evidence:
             tool, result = item.get("tool"), item.get("result", {})
+            if not isinstance(result, dict) or result.get("success") is False:
+                continue
             if tool == "system_summary":
                 ram = result.get("ram_percent_used")
                 if isinstance(ram, (int, float)):
                     found.append(f"RAM usage was {ram}% (high-pressure threshold: 90%).")
                     if ram >= 90:
-                        found.append("ALERT: High system-memory pressure is the likely cause.")
+                        finding = f"High memory pressure: RAM is {ram:g}% used (threshold: 90%)."
+                        state.confirmed_findings.append(finding)
+                        state.possible_causes.append("Memory pressure may contribute to slowness; check while the issue occurs.")
+                        found.append("ALERT: " + finding)
                         recs.append("Close an approved memory-heavy app before launching the game.")
+                    else:
+                        state.normal_readings.append(f"RAM is {ram:g}% used, below the 90% high-pressure threshold.")
                 for disk in result.get("disks", []):
-                    if disk.get("free_gb", 999) < 10:
-                        found.append(f"ALERT: {disk.get('device')} has critically low free space ({disk.get('free_gb')} GB).")
-                        recs.append("Free at least 10 GB on the affected drive.")
+                    if not isinstance(disk, dict):
+                        continue
+                    free, used = disk.get("free_gb"), disk.get("percent_used")
+                    if not isinstance(free, (int, float)):
+                        continue
+                    low = free < 30 or (isinstance(used, (int, float)) and used >= 90)
+                    drive = disk.get("device") or disk.get("mountpoint") or "A drive"
+                    if low:
+                        finding = f"{drive} has {'critically low' if free < 10 else 'low'} free space ({free:g} GB)."
+                        state.confirmed_findings.append(finding)
+                        state.possible_causes.append("Low storage may affect performance, but this snapshot does not prove it caused the slowdown.")
+                        found.append("ALERT: " + finding)
+                        recs.append("Review storage usage and free space on the affected drive.")
+                    else:
+                        reading = f"{drive} has {free:g} GB free, above the low-space thresholds."
+                        state.normal_readings.append(reading)
+                        found.append(reading)
             elif tool == "game_status" and result.get("game"):
                 found.append(f"{result.get('game')} was detected with {result.get('elapsed_seconds', 0)} seconds elapsed.")
             elif tool == "nvidia_status":
@@ -78,14 +86,24 @@ class Evaluator:
                 if isinstance(temp, (int, float)):
                     found.append(f"GPU temperature was {temp} C.")
                     if temp >= 85:
-                        found.append("ALERT: GPU thermal pressure is the likely cause.")
+                        finding = f"GPU temperature is high ({temp:g} C; threshold: 85 C)."
+                        state.confirmed_findings.append(finding)
+                        state.possible_causes.append("Heat may affect GPU performance; check load and clock speeds during the issue.")
+                        found.append("ALERT: " + finding)
                         recs.append("Check airflow and reduce GPU load.")
+                    else:
+                        state.normal_readings.append(f"GPU temperature is {temp:g} C, below the 85 C warning threshold.")
                 if all(isinstance(x, (int, float)) for x in (used, total)) and total and used / total >= .95:
-                    found.append("ALERT: GPU memory pressure is the likely cause.")
+                    finding = "GPU memory usage is at or above the 95% warning threshold."
+                    state.confirmed_findings.append(finding)
+                    state.possible_causes.append("GPU memory pressure may affect performance; compare with the same workload.")
+                    found.append("ALERT: " + finding)
                     recs.append("Reduce texture quality or resolution.")
             elif tool == "recent_windows_errors":
                 events = result.get("events", [])
                 if events:
+                    state.confirmed_findings.append(f"Windows recorded {len(events)} recent warning/error events.")
+                    state.possible_causes.append("Recent Windows events need inspection; their count alone does not establish a cause.")
                     found.append(f"Windows reported {len(events)} recent relevant error or warning events. "
                                  "Their relationship to this problem is unconfirmed.")
         return found, list(dict.fromkeys(recs))

@@ -131,16 +131,39 @@ class EvaluatorAndReportTests(unittest.TestCase):
             self.assertEqual(changes, [])
             restarted.db.close()
 
-    def test_model_receives_threshold_and_event_causality_context(self) -> None:
+    def test_sensor_assessment_does_not_accept_generated_causal_claims(self) -> None:
         prompts = []
         state = BrainState("why is my pc slow", evidence=[
-            {"tool": "system_summary", "result": {"ram_percent_used": 72.9}},
+            {"tool": "system_summary", "result": {"ram_percent_used": 71.9,
+                "disks": [{"device": "C:", "free_gb": 19.4}]}},
             {"tool": "recent_windows_errors", "result": {"events": [{}, {}]}},
         ])
-        Evaluator({}, lambda prompt: prompts.append(prompt) or "{}").finalize(state)
-        self.assertIn("high-pressure threshold: 90%", prompts[0])
-        self.assertIn("relationship to this problem is unconfirmed", prompts[0])
+        Evaluator({}, lambda prompt: prompts.append(prompt) or '{"diagnosis":"RAM near threshold caused slowness"}').finalize(state)
+        self.assertEqual(prompts, [])
+        self.assertIn("71.9%", state.normal_readings[0])
+        self.assertTrue(any("19.4 GB" in line for line in state.confirmed_findings))
+        self.assertTrue(any("does not prove" in line for line in state.possible_causes))
+        self.assertTrue(any("count alone" in line for line in state.possible_causes))
         self.assertNotIn("High system-memory pressure", state.diagnosis)
+
+    def test_threshold_crossing_confirms_condition_not_cause(self) -> None:
+        state = BrainState("why is my pc slow", evidence=[
+            {"tool": "system_summary", "result": {"ram_percent_used": 90}},
+            {"tool": "nvidia_status", "result": {"temperature_c": 85, "memory_used_mb": 950, "memory_total_mb": 1000}},
+        ])
+        Evaluator({}).finalize(state)
+        self.assertEqual(len(state.confirmed_findings), 3)
+        self.assertEqual(state.normal_readings, [])
+        self.assertNotIn("likely cause", state.diagnosis)
+        self.assertTrue(state.possible_causes)
+
+    def test_failed_sensor_does_not_create_normal_readings(self) -> None:
+        state = BrainState("why slow", evidence=[
+            {"tool": "system_summary", "result": {"success": False, "ram_percent_used": 20}},
+        ])
+        Evaluator({}).finalize(state)
+        self.assertEqual(state.normal_readings, [])
+        self.assertIn("inconclusive", state.diagnosis)
 
     def test_evaluator_plan_revision(self) -> None:
         state = BrainState("RAM high", evidence=[{"tool": "system_summary", "result": {"ram_percent_used": 94}}])
@@ -148,11 +171,16 @@ class EvaluatorAndReportTests(unittest.TestCase):
         self.assertEqual(revision[0].tool_name, "top_processes")
 
     def test_report_creation(self) -> None:
-        state = BrainState("test request", diagnosis="Healthy")
+        state = BrainState("test request", diagnosis="Snapshot assessed",
+                           normal_readings=["RAM below threshold."],
+                           possible_causes=["Cause remains unconfirmed."])
         with tempfile.TemporaryDirectory() as folder, patch("martin_ai.brain.memory.REPORT_DIR", Path(folder)):
             paths = save_report(state)
             self.assertTrue(Path(paths["json"]).exists())
             self.assertTrue(Path(paths["markdown"]).exists())
+            report = Path(paths["markdown"]).read_text(encoding="utf-8")
+            self.assertIn("Normal Readings", report)
+            self.assertIn("Possible Causes", report)
 
 
 if __name__ == "__main__":

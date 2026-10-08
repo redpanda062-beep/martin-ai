@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import BrainState
+from martin_ai.response_formatter import investigation_assessment
 
 
 REPORT_DIR = Path.home() / "Documents" / "MartinAI Investigations"
@@ -41,6 +42,7 @@ def save_report(state: BrainState) -> dict[str, str]:
         f"## Request\n\n{state.user_request}\n\n"
         f"## Diagnosis\n\n{state.diagnosis or 'Inconclusive'}\n\n"
         f"**Confidence:** {state.confidence}\n\n"
+        f"{investigation_assessment(state)}\n\n"
         f"## Evidence\n\n{evidence}\n\n"
         f"## Recommendations\n\n{recommendations}\n\n"
         f"## Similar past cases\n\nHistorical context only; fresh checks are required.\n\n{history}\n\n"
